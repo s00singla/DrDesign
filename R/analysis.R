@@ -20,6 +20,28 @@ pooled_example <- "Season\tRep\tTreatment\tValue\nKharif-2024\tR1\tT1\t25.4\nKha
 split_plot_example <- "Rep\tMainPlot\tSubPlot\tValue\nR1\tI1\tV1\t28.1\nR1\tI1\tV2\t31.5\nR1\tI2\tV1\t30.2\nR1\tI2\tV2\t34.6\nR2\tI1\tV1\t27.4\nR2\tI1\tV2\t30.8\nR2\tI2\tV1\t29.9\nR2\tI2\tV2\t33.8"
 correlation_example <- "Yield\tRainfall\tNitrogen\tPlantHeight\n42.1\t740\t90\t112\n45.0\t780\t100\t116\n39.8\t690\t85\t109\n50.3\t820\t110\t122\n47.4\t800\t105\t118"
 
+correlation_p_matrix <- function(df, conf.level = 0.95) {
+  mat <- as.matrix(df)
+  n <- ncol(mat)
+  p_mat <- matrix(0, n, n)
+  colnames(p_mat) <- colnames(mat)
+  rownames(p_mat) <- colnames(mat)
+
+  if (n < 2) {
+    return(p_mat)
+  }
+
+  for (i in seq_len(n - 1)) {
+    for (j in seq.int(i + 1, n)) {
+      test_result <- suppressWarnings(stats::cor.test(mat[, i], mat[, j], conf.level = conf.level))
+      p_mat[i, j] <- test_result$p.value
+      p_mat[j, i] <- test_result$p.value
+    }
+  }
+
+  p_mat
+}
+
 format_anova_table <- function(model) {
   out <- as.data.frame(anova(model))
   out$Term <- rownames(out)
@@ -389,9 +411,12 @@ run_correlation_regression <- function(df, response, predictors) {
   validate(need(length(numeric_cols) >= 2, "At least two numeric columns are required."))
   validate(need(response %in% numeric_cols, "Choose a numeric response variable."))
   validate(need(length(predictors) >= 1, "Choose at least one numeric predictor."))
+  selected_predictors <- unique(setdiff(predictors, response))
+  validate(need(length(selected_predictors) >= 1, "Choose at least one predictor different from the response variable."))
 
-  corr <- round(cor(df[, unique(c(response, predictors)), drop = FALSE], use = "complete.obs"), 4)
-  formula_text <- sprintf("%s ~ %s", response, paste(predictors, collapse = " + "))
+  numeric_df <- df[, unique(c(response, selected_predictors)), drop = FALSE]
+  corr <- round(cor(numeric_df, use = "complete.obs"), 4)
+  formula_text <- sprintf("%s ~ %s", response, paste(selected_predictors, collapse = " + "))
   model <- lm(as.formula(formula_text), data = df)
   coeffs <- as.data.frame(summary(model)$coefficients)
   coeffs$Term <- rownames(coeffs)
@@ -400,6 +425,8 @@ run_correlation_regression <- function(df, response, predictors) {
   list(
     dataset = df,
     correlation = as.data.frame(corr),
+    correlation_source = numeric_df,
+    correlation_p = as.data.frame(correlation_p_matrix(numeric_df)),
     coefficients = coeffs,
     fit = data.frame(
       Metric = c("R-squared", "Adjusted R-squared", "Residual SE", "F-statistic p-value"),

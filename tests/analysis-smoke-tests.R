@@ -1,0 +1,16 @@
+source("R/shared.R", local = TRUE)
+source("R/analysis.R", local = TRUE)
+
+design_result <- run_design_analysis(read_pasted_table(default_data[["CRD"]]), "CRD", alpha = 0.05)
+stopifnot(nrow(design_result$anova) >= 2)
+
+pooled_result <- run_pooled_anova(read_pasted_table(pooled_example), alpha = 0.05)
+stopifnot(nrow(pooled_result$anova) >= 3)
+
+split_result <- run_split_plot(read_pasted_table(split_plot_example), alpha = 0.05)
+stopifnot(nrow(split_result$interaction_means) >= 1)
+
+cor_result <- run_correlation_regression(read_pasted_table(correlation_example), "Yield", c("Rainfall", "Nitrogen"))
+stopifnot(nrow(cor_result$coefficients) >= 2)
+
+cat("All smoke tests passed.\n")

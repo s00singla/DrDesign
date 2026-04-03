@@ -1,0 +1,22 @@
+Package: drdesignsuite
+Type: Shiny
+Title: Research Station Analytics Suite
+Version: 1.0.0
+Authors@R: person("Research", "Station", email = "support@example.org", role = c("aut", "cre"))
+Description: Multi-app Shiny suite for CRD/RBD, factorial design, pooled ANOVA, split-plot, and correlation-regression analysis.
+License: MIT
+Encoding: UTF-8
+Imports:
+    shiny,
+    htmltools,
+    readxl,
+    dplyr,
+    tidyr,
+    agricolae,
+    ggplot2,
+    emmeans,
+    multcomp,
+    multcompView,
+    car,
+    lme4,
+    lmerTest

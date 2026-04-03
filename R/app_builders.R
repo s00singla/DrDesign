@@ -395,15 +395,29 @@ correlation_regression_ui <- function(nav_catalog = app_catalog) {
       textAreaInput("data_input", "Or paste a table", value = correlation_example, rows = 11),
       uiOutput("response_ui"),
       uiOutput("predictor_ui"),
+      selectInput("corr_method", "Correlation plot style", choices = c("Color tiles" = "color", "Circles" = "circle", "Numbers" = "number")),
+      selectInput("corr_type", "Matrix area", choices = c("Lower triangle" = "lower", "Full matrix" = "full", "Upper triangle" = "upper"), selected = "lower"),
+      selectInput("corr_order", "Variable order", choices = c("Input order" = "original", "Clustered" = "hclust")),
+      selectInput("corr_palette", "Color palette", choices = c("Red-Blue" = "RdBu", "Purple-Orange" = "PuOr", "Green-Pink" = "PiYG"), selected = "RdBu"),
+      checkboxInput("corr_sig_filter", "Hide insignificant correlations", value = TRUE),
+      numericInput("corr_sig_level", "Significance level for plot", value = 0.05, min = 0.001, max = 0.2, step = 0.01),
       build_help_box("Expected data", c("Use numeric columns for correlation and regression.", "Choose one numeric response variable.", "Choose one or more numeric predictors.")),
       actionButton("analyze", "Run correlation and regression", class = "btn-primary"),
       tags$hr(),
       selectInput("csv_table", "CSV table to download", choices = c("Correlation matrix", "Coefficients", "Fit statistics", "Diagnostics")),
       downloadButton("download_csv", "Download CSV"),
+      downloadButton("download_corrplot", "Download correlation plot"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
-    analysis_tabs(tabPanel("Correlation Matrix", tableOutput("correlation_table")), tabPanel("Regression Coefficients", tableOutput("coefficients_table")), tabPanel("Fit Statistics", tableOutput("fit_table")), tabPanel("Diagnostics", tableOutput("diagnostics_table")), tabPanel("Long Data View", tableOutput("long_data_table")))
+    analysis_tabs(
+      tabPanel("Correlation Plot", plotOutput("correlation_plot", height = "520px")),
+      tabPanel("Correlation Matrix", tableOutput("correlation_table")),
+      tabPanel("Regression Coefficients", tableOutput("coefficients_table")),
+      tabPanel("Fit Statistics", tableOutput("fit_table")),
+      tabPanel("Diagnostics", tableOutput("diagnostics_table")),
+      tabPanel("Long Data View", tableOutput("long_data_table"))
+    )
     ,
     nav_catalog = nav_catalog
   )
@@ -422,7 +436,8 @@ correlation_regression_server <- function(input, output, session) {
   output$predictor_ui <- renderUI({
     df <- dataset()
     numeric_cols <- if (is.null(df)) character(0) else names(df)[vapply(df, is.numeric, logical(1))]
-    checkboxGroupInput("predictors", "Predictor variables", choices = numeric_cols, selected = numeric_cols[2:min(length(numeric_cols), 3)])
+    default_predictors <- setdiff(numeric_cols, numeric_cols[1])[seq_len(max(0, min(length(numeric_cols) - 1, 2)))]
+    checkboxGroupInput("predictors", "Predictor variables", choices = numeric_cols, selected = default_predictors)
   })
 
   analysis <- eventReactive(input$analyze, {
@@ -434,6 +449,37 @@ correlation_regression_server <- function(input, output, session) {
   })
 
   output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
+  output$correlation_plot <- renderPlot({
+    req(analysis())
+    validate(need(requireNamespace("corrplot", quietly = TRUE), "Install the 'corrplot' package to view the correlation plot."))
+    validate(need(requireNamespace("RColorBrewer", quietly = TRUE), "Install the 'RColorBrewer' package to view the correlation plot."))
+
+    corr_matrix <- as.matrix(analysis()$correlation)
+    p_matrix <- as.matrix(analysis()$correlation_p)
+    palette_values <- colorRampPalette(RColorBrewer::brewer.pal(8, input$corr_palette))(200)
+    label_position <- switch(input$corr_type, lower = "ld", upper = "td", full = "lt", "ld")
+
+    corrplot::corrplot(
+      corr_matrix,
+      method = input$corr_method,
+      type = input$corr_type,
+      order = input$corr_order,
+      col = palette_values,
+      tl.pos = label_position,
+      tl.col = "black",
+      tl.cex = 0.9,
+      tl.srt = 45,
+      diag = TRUE,
+      addgrid.col = "grey85",
+      mar = c(0, 0, 2, 0),
+      cl.pos = "r",
+      cl.cex = 0.8,
+      p.mat = if (isTRUE(input$corr_sig_filter)) p_matrix else NULL,
+      sig.level = input$corr_sig_level,
+      insig = if (isTRUE(input$corr_sig_filter)) "blank" else "pch",
+      title = sprintf("Correlation Plot: %s", analysis()$formula)
+    )
+  })
   output$correlation_table <- renderTable({ req(analysis()); analysis()$correlation }, rownames = TRUE)
   output$coefficients_table <- renderTable({ req(analysis()); analysis()$coefficients }, rownames = FALSE)
   output$fit_table <- renderTable({ req(analysis()); analysis()$fit }, rownames = FALSE)
@@ -449,12 +495,49 @@ correlation_regression_server <- function(input, output, session) {
     }
   )
 
+  output$download_corrplot <- downloadHandler(
+    filename = function() "correlation-plot.png",
+    content = function(file) {
+      req(analysis())
+      validate(need(requireNamespace("corrplot", quietly = TRUE), "Install the 'corrplot' package to download the correlation plot."))
+      validate(need(requireNamespace("RColorBrewer", quietly = TRUE), "Install the 'RColorBrewer' package to download the correlation plot."))
+
+      corr_matrix <- as.matrix(analysis()$correlation)
+      p_matrix <- as.matrix(analysis()$correlation_p)
+      palette_values <- colorRampPalette(RColorBrewer::brewer.pal(8, input$corr_palette))(200)
+      label_position <- switch(input$corr_type, lower = "ld", upper = "td", full = "lt", "ld")
+
+      png(file, width = 2000, height = 2000, res = 300)
+      on.exit(dev.off(), add = TRUE)
+      corrplot::corrplot(
+        corr_matrix,
+        method = input$corr_method,
+        type = input$corr_type,
+        order = input$corr_order,
+        col = palette_values,
+        tl.pos = label_position,
+        tl.col = "black",
+        tl.cex = 1,
+        tl.srt = 45,
+        diag = TRUE,
+        addgrid.col = "grey85",
+        mar = c(0, 0, 2, 0),
+        cl.pos = "r",
+        cl.cex = 0.8,
+        p.mat = if (isTRUE(input$corr_sig_filter)) p_matrix else NULL,
+        sig.level = input$corr_sig_level,
+        insig = if (isTRUE(input$corr_sig_filter)) "blank" else "pch",
+        title = sprintf("Correlation Plot: %s", analysis()$formula)
+      )
+    }
+  )
+
   output$download_report <- downloadHandler(
     filename = function() "correlation-regression-report.html",
     content = function(file) {
       req(analysis())
       save_html_report("Correlation and Regression Report", list(
-        list(title = "Dataset summary", subtitle = analysis()$report_note, table = head(analysis()$dataset, 20)),
+        list(title = "Dataset summary", subtitle = paste(analysis()$report_note, sprintf("Corrplot style: %s, area: %s, order: %s.", input$corr_method, input$corr_type, input$corr_order)), table = head(analysis()$dataset, 20)),
         list(title = "Correlation matrix", table = analysis()$correlation),
         list(title = "Regression coefficients", table = analysis()$coefficients),
         list(title = "Fit statistics", table = analysis()$fit),

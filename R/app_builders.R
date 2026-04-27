@@ -173,7 +173,8 @@ crd_rbd_ui <- function(nav_catalog = app_catalog) {
       tags$hr(),
       selectInput("csv_table", "CSV table to download", choices = c("Long data", "ANOVA", "Key statistics", "Means", "Treatment summary", "Groups")),
       downloadButton("download_csv", "Download CSV"),
-      downloadButton("download_report", "Download HTML report"),
+      downloadButton("download_pdf_report", "Download PDF report"),
+      downloadButton("download_word_report", "Download Word report"),
       uiOutput("error_msg")
     ),
     analysis_tabs(
@@ -209,7 +210,7 @@ crd_rbd_server <- function(input, output, session) {
   output$lsd_groups <- renderTable({ req(analysis()); analysis()$groups }, rownames = FALSE)
   output$treatment_summary_table <- renderTable({ req(analysis()); analysis()$treatment_summary }, rownames = FALSE)
   output$inference_text <- renderText({ req(analysis()); analysis()$inference })
-  output$treatment_plot <- renderPlot({
+  treatment_plot_object <- reactive({
     req(analysis())
     if (identical(input$plot_type, "boxplot")) {
       ggplot(analysis()$dataset, aes(x = Trt, y = Value, fill = Trt)) +
@@ -226,6 +227,31 @@ crd_rbd_server <- function(input, output, session) {
         labs(title = sprintf("%s treatment means with 95%% CI", input$design), x = "Treatment", y = "Mean response")
     }
   })
+  output$treatment_plot <- renderPlot({
+    treatment_plot_object()
+  })
+
+  report_params <- reactive({
+    req(analysis())
+    list(
+      report_title = sprintf("%s Analysis Report", input$design),
+      design_name = input$design,
+      alpha = input$alpha,
+      comparison_method = analysis()$comparison_method,
+      descriptive_stats = head(analysis()$dataset, 20),
+      summary_stats = analysis()$treatment_summary,
+      anova_table = analysis()$anova,
+      key_statistics = analysis()$stats,
+      mean_table = analysis()$means,
+      posthoc_summary = analysis()$lsd_stats,
+      posthoc_table = analysis()$groups,
+      dataset_preview = head(analysis()$dataset, 20),
+      inference_text = analysis()$inference,
+      report_note = analysis()$report_note,
+      plot_errorbar = treatment_plot_object(),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
 
   output$download_csv <- downloadHandler(
     filename = function() sprintf("crd-rbd-%s.csv", gsub("[^a-z]+", "-", tolower(input$csv_table))),
@@ -236,19 +262,27 @@ crd_rbd_server <- function(input, output, session) {
     }
   )
 
-  output$download_report <- downloadHandler(
-    filename = function() "crd-rbd-report.html",
+  output$download_pdf_report <- downloadHandler(
+    filename = function() "crd-rbd-report.pdf",
     content = function(file) {
       req(analysis())
-      save_html_report("CRD / RBD Report", list(
-        list(title = "Treatment summary with confidence intervals", table = analysis()$treatment_summary),
-        list(title = "ANOVA table", table = analysis()$anova),
-        list(title = "Key statistics", table = analysis()$stats),
-        list(title = "Inference", text = analysis()$inference),
-        list(title = sprintf("%s summary", analysis()$comparison_method), table = analysis()$lsd_stats),
-        list(title = "Letter grouping", table = analysis()$groups),
-        list(title = "Dataset summary", subtitle = analysis()$report_note, table = head(analysis()$dataset, 20))
-      ), file)
+      render_parameterized_report(
+        output_file = file,
+        output_format = "pdf_document",
+        params = report_params()
+      )
+    }
+  )
+
+  output$download_word_report <- downloadHandler(
+    filename = function() "crd-rbd-report.docx",
+    content = function(file) {
+      req(analysis())
+      render_parameterized_report(
+        output_file = file,
+        output_format = "word_document",
+        params = report_params()
+      )
     }
   )
 }

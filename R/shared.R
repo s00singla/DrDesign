@@ -104,8 +104,77 @@ read_dataset_input <- function(file_input, pasted_text) {
 }
 
 metrics_table <- function(named_values, digits = 4) {
-  values <- unname(unlist(named_values))
-  data.frame(Metric = names(named_values), Value = ifelse(is.numeric(values), round(values, digits), as.character(values)), stringsAsFactors = FALSE)
+  flat_values <- unlist(named_values, recursive = TRUE, use.names = TRUE)
+  if (length(flat_values) == 0) {
+    return(data.frame(Metric = character(0), Value = character(0), stringsAsFactors = FALSE))
+  }
+
+  metric_names <- names(flat_values)
+  if (is.null(metric_names)) {
+    metric_names <- rep("", length(flat_values))
+  }
+
+  if (any(metric_names == "")) {
+    empty_idx <- which(metric_names == "")
+    metric_names[empty_idx] <- paste0("Metric ", empty_idx)
+  }
+
+  metric_names <- gsub("\\.+", " ", metric_names)
+  metric_names <- gsub("^\\s+|\\s+$", "", metric_names)
+
+  formatted_values <- vapply(flat_values, function(value) {
+    if (is.numeric(value)) {
+      format(round(value, digits), trim = TRUE, scientific = FALSE)
+    } else {
+      as.character(value)
+    }
+  }, character(1))
+
+  data.frame(Metric = metric_names, Value = formatted_values, stringsAsFactors = FALSE)
+}
+
+resolve_report_template <- function(template_name = "analysis-report-template.Rmd") {
+  search_roots <- c(
+    getwd(),
+    file.path(getwd(), "."),
+    file.path(getwd(), ".."),
+    file.path(getwd(), "..", "..")
+  )
+  candidates <- unique(c(file.path(search_roots, template_name), template_name))
+
+  for (path in candidates) {
+    if (file.exists(path)) {
+      return(normalizePath(path, winslash = "/", mustWork = TRUE))
+    }
+  }
+
+  stop(sprintf("Could not find report template '%s'.", template_name))
+}
+
+render_parameterized_report <- function(output_file, output_format, params, template_name = "analysis-report-template.Rmd") {
+  template_path <- resolve_report_template(template_name)
+  render_input <- tempfile(fileext = ".Rmd")
+  ok <- file.copy(template_path, render_input, overwrite = TRUE)
+  if (!ok) {
+    stop("Could not prepare the report template for rendering.")
+  }
+
+  output_dir <- dirname(output_file)
+  rendered_path <- rmarkdown::render(
+    input = render_input,
+    output_format = output_format,
+    output_file = basename(output_file),
+    output_dir = output_dir,
+    params = params,
+    envir = new.env(parent = globalenv()),
+    quiet = TRUE
+  )
+
+  if (!file.exists(output_file) && file.exists(rendered_path)) {
+    file.copy(rendered_path, output_file, overwrite = TRUE)
+  }
+
+  invisible(output_file)
 }
 
 save_html_report <- function(title, sections, file) {

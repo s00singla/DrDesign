@@ -1,0 +1,149 @@
+---
+title: "`r if (is.null(params$report_title) || identical(params$report_title, '')) 'Experimental Analysis Report' else params$report_title`"
+output:
+  pdf_document:
+    toc: true
+  word_document:
+    toc: true
+params:
+  report_title: "Experimental Analysis Report"
+  design_name: NULL
+  alpha: NULL
+  comparison_method: NULL
+  descriptive_stats: NULL
+  summary_stats: NULL
+  anova_table: NULL
+  key_statistics: NULL
+  mean_table: NULL
+  posthoc_summary: NULL
+  posthoc_table: NULL
+  dataset_preview: NULL
+  inference_text: NULL
+  report_note: NULL
+  plot_errorbar: NULL
+  generated_at: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+`%||%` <- function(x, y) {
+  if (is.null(x) || length(x) == 0 || identical(x, "")) y else x
+}
+
+has_rows <- function(x) {
+  is.data.frame(x) && nrow(x) > 0
+}
+
+render_table <- function(x, caption, fallback = "No data available for this section.") {
+  if (has_rows(x)) {
+    print(knitr::kable(
+      x,
+      caption = caption,
+      booktabs = knitr::is_latex_output(),
+      longtable = knitr::is_latex_output()
+    ))
+  } else {
+    cat(fallback)
+  }
+}
+```
+
+# Report Overview
+
+`r params$report_note %||% 'This report summarizes the latest analysis generated from the Shiny app.'`
+
+```{r overview}
+overview <- data.frame(
+  Item = c("Design", "Significance level", "Post-hoc comparison", "Generated at"),
+  Value = c(
+    params$design_name %||% "NA",
+    if (is.null(params$alpha)) "NA" else params$alpha,
+    params$comparison_method %||% "NA",
+    params$generated_at %||% format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+  ),
+  stringsAsFactors = FALSE
+)
+
+print(knitr::kable(overview, caption = "Analysis Metadata", booktabs = knitr::is_latex_output()))
+```
+
+# Dataset Preview
+
+```{r dataset-preview}
+render_table(
+  params$dataset_preview,
+  "Input Data Preview",
+  "No input preview was supplied from the app."
+)
+```
+
+# Treatment Summary
+
+```{r treatment-summary}
+render_table(
+  params$summary_stats,
+  "Treatment Summary",
+  "No treatment summary was supplied."
+)
+```
+
+# ANOVA Summary
+
+```{r anova-table}
+render_table(
+  params$anova_table,
+  "ANOVA Table",
+  "No ANOVA table was supplied."
+)
+```
+
+# Key Statistics
+
+```{r key-statistics}
+render_table(
+  params$key_statistics,
+  "Key Statistics",
+  "No key statistics were supplied."
+)
+```
+
+# Means and Post-hoc Comparison
+
+```{r means-table}
+render_table(
+  params$mean_table,
+  "Treatment Means",
+  "No treatment mean table was supplied."
+)
+```
+
+```{r posthoc-summary}
+render_table(
+  params$posthoc_summary,
+  "Post-hoc Summary",
+  "No post-hoc summary table was supplied."
+)
+```
+
+```{r posthoc-groups}
+render_table(
+  params$posthoc_table,
+  "Post-hoc Grouping",
+  "No post-hoc grouping table was supplied."
+)
+```
+
+# Interpretation
+
+`r params$inference_text %||% 'No inference text was supplied.'`
+
+# Plot
+
+```{r report-plot, fig.width=8, fig.height=5}
+if (inherits(params$plot_errorbar, "ggplot")) {
+  print(params$plot_errorbar)
+} else {
+  cat("No ggplot object was supplied from the app.")
+}
+```

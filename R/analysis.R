@@ -1,6 +1,7 @@
 library(dplyr)
 library(tidyr)
 library(agricolae)
+library(desplot)
 library(ggplot2)
 library(emmeans)
 library(multcomp)
@@ -13,7 +14,9 @@ default_data <- list(
   CRD = "trt\tRep1\tRep2\tRep3\nT1\t25.4\t26.1\t24.8\nT2\t28.2\t27.5\t29.1\nT3\t21.0\t22.4\t20.8\nT4\t30.5\t31.2\t30.9",
   RBD = "trt\tRep1\tRep2\tRep3\nT1\t25.4\t26.1\t24.8\nT2\t28.2\t27.5\t29.1\nT3\t21.0\t22.4\t20.8\nT4\t30.5\t31.2\t30.9",
   `Factorial CRD` = "trt\tRep1\tRep2\tRep3\nA1B1\t25.4\t26.1\t24.8\nA1B2\t28.2\t27.5\t29.1\nA2B1\t21.0\t22.4\t20.8\nA2B2\t30.5\t31.2\t30.9",
-  `Factorial RBD` = "trt\tRep1\tRep2\tRep3\nA1B1\t25.4\t26.1\t24.8\nA1B2\t28.2\t27.5\t29.1\nA2B1\t21.0\t22.4\t20.8\nA2B2\t30.5\t31.2\t30.9"
+  `Factorial RBD` = "trt\tRep1\tRep2\tRep3\nA1B1\t25.4\t26.1\t24.8\nA1B2\t28.2\t27.5\t29.1\nA2B1\t21.0\t22.4\t20.8\nA2B2\t30.5\t31.2\t30.9",
+  `Descriptive Statistics` = "Group\tYield\tHeight\nA\t42.1\t120\nB\t45.3\t125\nA\t40.2\t118\nB\t46.7\t128",
+  `Compare Means` = "Group\tValue\nControl\t25.4\nControl\t26.1\nTreatment\t28.2\nTreatment\t27.5\nControl\t24.9\nTreatment\t29.0"
 )
 
 pooled_example <- "Season\tRep\tTreatment\tValue\nKharif-2024\tR1\tT1\t25.4\nKharif-2024\tR2\tT1\t26.1\nKharif-2024\tR1\tT2\t28.2\nKharif-2024\tR2\tT2\t27.8\nRabi-2025\tR1\tT1\t24.9\nRabi-2025\tR2\tT1\t25.5\nRabi-2025\tR1\tT2\t29.0\nRabi-2025\tR2\tT2\t28.6"
@@ -42,6 +45,207 @@ correlation_p_matrix <- function(df, conf.level = 0.95) {
   p_mat
 }
 
+summarize_numeric_columns <- function(df, vars = names(df)) {
+  numeric_vars <- vars[vapply(df[vars], is.numeric, logical(1))]
+  if (length(numeric_vars) == 0) {
+    stop("No numeric variables found for descriptive analysis.")
+  }
+  out <- lapply(numeric_vars, function(name) {
+    col <- df[[name]]
+    data.frame(
+      Variable = name,
+      N = sum(!is.na(col)),
+      Mean = mean(col, na.rm = TRUE),
+      SD = stats::sd(col, na.rm = TRUE),
+      Min = min(col, na.rm = TRUE),
+      Max = max(col, na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+  })
+  do.call(rbind, out)
+}
+
+run_descriptive_analysis <- function(df, analysis_type, selected_vars = NULL, group_var = NULL) {
+  df <- normalize_columns(df)
+  numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
+  if (length(numeric_cols) == 0) {
+    stop("Upload a dataset with numeric columns to continue.")
+  }
+
+  if (is.null(selected_vars) || length(selected_vars) == 0) {
+    selected_vars <- numeric_cols
+  }
+  selected_vars <- intersect(selected_vars, numeric_cols)
+  if (length(selected_vars) == 0) {
+    stop("Select at least one numeric variable.")
+  }
+
+  summary_table <- summarize_numeric_columns(df, selected_vars)
+  by_group <- data.frame()
+  plot_obj <- NULL
+  normality <- "Select a normality check or plot in the tabs above."
+
+  if (analysis_type == "sumbygrp") {
+    if (is.null(group_var) || !nzchar(group_var) || !(group_var %in% names(df))) {
+      stop("Select a valid group variable for grouped summary.")
+    }
+    by_group <- df %>%
+      select(all_of(c(group_var, selected_vars))) %>%
+      pivot_longer(-all_of(group_var), names_to = "Variable", values_to = "Value") %>%
+      group_by(across(all_of(group_var)), Variable) %>%
+      summarise(
+        N = sum(!is.na(Value)),
+        Mean = mean(Value, na.rm = TRUE),
+        SD = stats::sd(Value, na.rm = TRUE),
+        Min = min(Value, na.rm = TRUE),
+        Max = max(Value, na.rm = TRUE),
+        .groups = "drop"
+      )
+  }
+
+  analysis_var <- selected_vars[[1]]
+  if (analysis_type == "boxplot") {
+    if (!is.null(group_var) && nzchar(group_var) && group_var %in% names(df)) {
+      plot_obj <- ggplot(df, aes_string(x = group_var, y = analysis_var, fill = group_var)) +
+        geom_boxplot(alpha = 0.85) +
+        theme_minimal() +
+        labs(title = sprintf("Boxplot of %s by %s", analysis_var, group_var), x = group_var, y = analysis_var) +
+        theme(legend.position = "none")
+    } else {
+      plot_obj <- ggplot(df, aes_string(x = "", y = analysis_var)) +
+        geom_boxplot(fill = "#66c2a5", alpha = 0.8) +
+        theme_minimal() +
+        labs(title = sprintf("Boxplot of %s", analysis_var), x = "", y = analysis_var)
+    }
+  } else if (analysis_type == "histogram") {
+    plot_obj <- ggplot(df, aes_string(x = analysis_var)) +
+      geom_histogram(fill = "#1f78b4", color = "#ffffff", bins = 15, alpha = 0.85) +
+      theme_minimal() +
+      labs(title = sprintf("Histogram of %s", analysis_var), x = analysis_var, y = "Count")
+  } else if (analysis_type == "qqplot") {
+    plot_obj <- ggplot(df, aes_string(sample = analysis_var)) +
+      stat_qq(color = "#1f78b4") +
+      stat_qq_line(color = "#d62728") +
+      theme_minimal() +
+      labs(title = sprintf("Q-Q plot for %s", analysis_var), x = "Theoretical quantiles", y = "Sample quantiles")
+  } else if (analysis_type == "nt") {
+    values <- df[[analysis_var]]
+    if (sum(!is.na(values)) < 3) {
+      stop("Normality test requires at least 3 non-missing values.")
+    }
+    normality_res <- shapiro.test(values)
+    normality <- c(
+      sprintf("Variable: %s", analysis_var),
+      sprintf("W = %.4f", unname(normality_res$statistic)),
+      sprintf("p-value = %.4f", normality_res$p.value),
+      if (normality_res$p.value >= 0.05) "The distribution is not significantly different from normal." else "The distribution deviates from normality."
+    )
+    plot_obj <- ggplot(df, aes_string(sample = analysis_var)) +
+      stat_qq(color = "#1f78b4") +
+      stat_qq_line(color = "#d62728") +
+      theme_minimal() +
+      labs(title = sprintf("Q-Q plot for %s", analysis_var), x = "Theoretical quantiles", y = "Sample quantiles")
+  }
+
+  list(
+    dataset = df,
+    summary = summary_table,
+    by_group = by_group,
+    plot_obj = plot_obj,
+    normality = normality
+  )
+}
+
+run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL, pair_left = NULL, pair_right = NULL, mu = 0, var_equal = TRUE) {
+  df <- normalize_columns(df)
+  numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
+  if (length(numeric_cols) == 0) {
+    stop("Upload a dataset with numeric columns for t-test analysis.")
+  }
+
+  if (is.null(value_var) || !value_var %in% names(df)) {
+    stop("Select an outcome variable for the t-test.")
+  }
+
+  result_summary <- data.frame()
+  variance_info <- data.frame()
+  test_result <- data.frame()
+  plot_obj <- NULL
+  dataset <- df
+
+  if (test_type == "one-sample") {
+    x <- df[[value_var]]
+    x <- na.omit(x)
+    if (length(x) < 3) stop("One-sample t-test requires at least 3 non-missing values.")
+    res <- t.test(x, mu = mu)
+    result_summary <- data.frame(Variable = value_var, N = length(x), Mean = mean(x), SD = sd(x), stringsAsFactors = FALSE)
+    variance_info <- data.frame(Statistic = c("Hypothesized mean", "Alternative"), Value = c(mu, res$alternative), stringsAsFactors = FALSE)
+    test_result <- data.frame(
+      Statistic = c("t statistic", "df", "p value", "Mean difference", "95% lower", "95% upper", "Method"),
+      Value = c(round(res$statistic, 4), round(res$parameter, 2), round(res$p.value, 4), round(res$estimate - mu, 4), round(res$conf.int[1], 4), round(res$conf.int[2], 4), res$method),
+      stringsAsFactors = FALSE
+    )
+    plot_obj <- ggplot(data.frame(Value = x), aes(x = Value)) +
+      geom_histogram(fill = "#1f78b4", color = "white", bins = 12, alpha = 0.8) +
+      theme_minimal() +
+      labs(title = sprintf("One-sample distribution for %s", value_var), x = value_var, y = "Count")
+  } else if (test_type %in% c("two-sample", "welch")) {
+    if (is.null(group_var) || !group_var %in% names(df)) {
+      stop("Select a grouping variable for two-sample t-test.")
+    }
+    df <- df %>% filter(!is.na(.data[[value_var]]), !is.na(.data[[group_var]]))
+    groups <- unique(df[[group_var]])
+    if (length(groups) != 2) stop("Grouping variable must have exactly two levels for two-sample tests.")
+    x <- df[[value_var]]
+    g <- factor(df[[group_var]])
+    res <- t.test(x ~ g, var.equal = test_type == "two-sample")
+    result_summary <- df %>% group_by(.data[[group_var]]) %>% summarise(N = sum(!is.na(.data[[value_var]])), Mean = mean(.data[[value_var]], na.rm = TRUE), SD = sd(.data[[value_var]], na.rm = TRUE), .groups = "drop")
+    variance <- var.test(x ~ g)
+    variance_info <- data.frame(Statistic = c("F statistic", "df1", "df2", "p value"), Value = c(round(variance$statistic, 4), variance$parameter[1], variance$parameter[2], round(variance$p.value, 4)), stringsAsFactors = FALSE)
+    test_result <- data.frame(
+      Statistic = c("t statistic", "df", "p value", "Mean difference", "95% lower", "95% upper", "Method"),
+      Value = c(round(res$statistic, 4), round(res$parameter, 2), round(res$p.value, 4), round(diff(res$estimate), 4), round(res$conf.int[1], 4), round(res$conf.int[2], 4), res$method),
+      stringsAsFactors = FALSE
+    )
+    plot_obj <- ggplot(df, aes_string(x = group_var, y = value_var, fill = group_var)) +
+      geom_boxplot(alpha = 0.85) +
+      theme_minimal() +
+      theme(legend.position = "none") +
+      labs(title = sprintf("%s distribution by %s", ifelse(test_type == "welch", "Welch t-test", "Two-sample t-test"), group_var), x = group_var, y = value_var)
+  } else if (test_type == "paired") {
+    if (is.null(pair_left) || is.null(pair_right) || !pair_left %in% names(df) || !pair_right %in% names(df)) {
+      stop("Select two numeric columns for paired t-test.")
+    }
+    x <- df[[pair_left]]
+    y <- df[[pair_right]]
+    if (length(na.omit(x)) < 3 || length(na.omit(y)) < 3) stop("Paired t-test requires at least 3 non-missing values in both columns.")
+    paired_df <- data.frame(Left = x, Right = y)
+    res <- t.test(paired_df$Left, paired_df$Right, paired = TRUE)
+    result_summary <- data.frame(Variable = c(pair_left, pair_right), Mean = c(mean(x, na.rm = TRUE), mean(y, na.rm = TRUE)), SD = c(sd(x, na.rm = TRUE), sd(y, na.rm = TRUE)), N = c(sum(!is.na(x)), sum(!is.na(y))), stringsAsFactors = FALSE)
+    variance_info <- data.frame(Statistic = c("Paired t-test"), Value = c(res$method), stringsAsFactors = FALSE)
+    test_result <- data.frame(
+      Statistic = c("t statistic", "df", "p value", "Mean difference", "95% lower", "95% upper", "Method"),
+      Value = c(round(res$statistic, 4), round(res$parameter, 2), round(res$p.value, 4), round(res$estimate[1] - res$estimate[2], 4), round(res$conf.int[1], 4), round(res$conf.int[2], 4), res$method),
+      stringsAsFactors = FALSE
+    )
+    plot_obj <- ggplot(paired_df, aes(x = Left, y = Right)) +
+      geom_point(color = "#1f78b4", size = 2) +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "#d62728") +
+      theme_minimal() +
+      labs(title = sprintf("Paired plot for %s and %s", pair_left, pair_right), x = pair_left, y = pair_right)
+  } else {
+    stop("Unsupported t-test type.")
+  }
+
+  list(
+    dataset = dataset,
+    summary = result_summary,
+    variance = variance_info,
+    test_result = test_result,
+    plot_obj = plot_obj
+  )
+}
+
 format_anova_table <- function(model) {
   out <- as.data.frame(anova(model))
   out$Term <- rownames(out)
@@ -49,7 +253,48 @@ format_anova_table <- function(model) {
   out
 }
 
-run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 0.05) {
+run_multiple_comparison <- function(model, treatment_term, method = "LSD", alpha = 0.05) {
+  method_key <- toupper(method)
+
+  result <- switch(
+    method_key,
+    LSD = agricolae::LSD.test(model, treatment_term, alpha = alpha, console = FALSE),
+    DMRT = agricolae::duncan.test(model, treatment_term, alpha = alpha, group = TRUE, console = FALSE),
+    TUKEY = agricolae::HSD.test(model, treatment_term, alpha = alpha, group = TRUE, console = FALSE),
+    stop(sprintf("Unsupported comparison method: %s", method))
+  )
+
+  result$method_label <- switch(method_key, LSD = "LSD", DMRT = "DMRT", TUKEY = "Tukey", method_key)
+  result
+}
+
+build_treatment_summary <- function(df_long, treatment_col = "Trt", alpha = 0.05) {
+  z_value <- qnorm(1 - alpha / 2)
+  split_values <- split(df_long$Value, df_long[[treatment_col]])
+
+  out <- do.call(rbind, lapply(names(split_values), function(name) {
+    values <- as.numeric(split_values[[name]])
+    mean_value <- mean(values, na.rm = TRUE)
+    sd_value <- stats::sd(values, na.rm = TRUE)
+    n_value <- sum(!is.na(values))
+    se_value <- sd_value / sqrt(n_value)
+    data.frame(
+      Treatment = name,
+      Mean = mean_value,
+      SD = sd_value,
+      N = n_value,
+      SE = se_value,
+      LowerCI = mean_value - z_value * se_value,
+      UpperCI = mean_value + z_value * se_value,
+      stringsAsFactors = FALSE
+    )
+  }))
+
+  rownames(out) <- NULL
+  out
+}
+
+run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 0.05, comparison_method = "LSD") {
   validate(need(ncol(df) >= 3, "Data must include a treatment column and at least two replication columns."))
   colnames(df)[1] <- "Trt"
   trt_order <- df$Trt
@@ -84,8 +329,8 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
     "Factorial RBD" = aov(Value ~ Rep + FactA * FactB, data = df_long)
   )
 
-  lsd <- if (design %in% c("CRD", "RBD")) {
-    LSD.test(model, "Trt", alpha = alpha, console = FALSE)
+  comparison <- if (design %in% c("CRD", "RBD")) {
+    run_multiple_comparison(model, "Trt", method = comparison_method, alpha = alpha)
   } else {
     LSD.test(model, c("FactA", "FactB"), alpha = alpha, console = FALSE)
   }
@@ -100,8 +345,21 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
     stringsAsFactors = FALSE
   )
 
-  means <- lsd$means
-  groups <- lsd$groups
+  means <- comparison$means
+  groups <- comparison$groups
+  treatment_summary <- if (design %in% c("CRD", "RBD")) build_treatment_summary(df_long, "Trt", alpha = alpha) else NULL
+
+  inference <- ""
+  if (design %in% c("CRD", "RBD")) {
+    p_val <- aov_sum["Trt", "Pr(>F)"]
+    if (!is.na(p_val)) {
+      if (p_val <= alpha) {
+        inference <- sprintf("Since the P-value in ANOVA table is <= %s, there is a significant difference between at least a pair of treatments, so multiple comparison is required to identify best treatment(s). Treatments with same letters are not significantly different.", alpha)
+      } else {
+        inference <- "Treatment means are not significantly different. Multiple comparison test is not performed."
+      }
+    }
+  }
 
   factorial_details <- NULL
   if (design %in% c("Factorial CRD", "Factorial RBD")) {
@@ -229,10 +487,106 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
     stats = stats,
     means = data.frame(Treatment = rownames(means), means, row.names = NULL, stringsAsFactors = FALSE),
     groups = data.frame(Treatment = rownames(groups), groups, row.names = NULL, stringsAsFactors = FALSE),
-    lsd_stats = metrics_table(lsd$statistics),
-    report_note = sprintf("Model: %s at alpha %.2f", design, alpha),
+    lsd_stats = metrics_table(comparison$statistics),
+    comparison_method = comparison$method_label %||% comparison_method,
+    treatment_summary = treatment_summary,
+    inference = inference,
+    report_note = sprintf("Model: %s at alpha %.2f using %s comparisons", design, alpha, comparison$method_label %||% comparison_method),
     factorial = factorial_details
   )
+}
+
+run_design_layout <- function(
+    design,
+    seed = 1,
+    trt = NULL,
+    rep = NULL,
+    main_trt = NULL,
+    sub_trt = NULL,
+    checks = NULL,
+    test_trt = NULL) {
+  kind <- "Super-Duper"
+
+  if (identical(design, "CRD")) {
+    validate(need(!is.null(trt) && trt >= 2, "CRD needs at least two treatments."))
+    validate(need(!is.null(rep) && rep >= 2, "CRD needs at least two replications."))
+    trt_labels <- sprintf("T%s", seq_len(trt))
+    fieldbook <- agricolae::design.crd(trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$r), , drop = FALSE]
+    fieldbook$ExperimentalUnit <- seq_len(nrow(fieldbook))
+    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = as.character(trtname))
+    list(
+      design = design,
+      summary = data.frame(Treatments = trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "RBD")) {
+    validate(need(!is.null(trt) && trt >= 2, "RBD needs at least two treatments."))
+    validate(need(!is.null(rep) && rep >= 2, "RBD needs at least two blocks."))
+    trt_labels <- sprintf("T%s", seq_len(trt))
+    fieldbook <- agricolae::design.rcbd(trt = trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$block), , drop = FALSE]
+    fieldbook$Plot <- ave(seq_len(nrow(fieldbook)), fieldbook$block, FUN = seq_along)
+    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = as.character(trtname))
+    list(
+      design = design,
+      summary = data.frame(Treatments = trt, Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "Augmented RCBD")) {
+    validate(need(!is.null(checks) && checks >= 2, "Augmented RCBD needs at least two checks."))
+    validate(need(!is.null(test_trt) && test_trt >= 2, "Augmented RCBD needs at least two test treatments."))
+    validate(need(!is.null(rep) && rep >= 2, "Augmented RCBD needs at least two blocks."))
+    check_labels <- sprintf("C%s", seq_len(checks))
+    test_labels <- sprintf("T%s", seq_len(test_trt))
+    fieldbook <- agricolae::design.dau(check_labels, test_labels, r = rep, seed = seed, serie = 0, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$block), , drop = FALSE]
+    fieldbook$Plot <- ave(seq_len(nrow(fieldbook)), fieldbook$block, FUN = seq_along)
+    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = as.character(trt))
+    list(
+      design = design,
+      summary = data.frame(Checks = checks, TestTreatments = test_trt, Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, Treatment = as.character(fieldbook$trt), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "Split Plot")) {
+    validate(need(!is.null(main_trt) && main_trt >= 2, "Split plot needs at least two main-plot treatments."))
+    validate(need(!is.null(sub_trt) && sub_trt >= 2, "Split plot needs at least two subplot treatments."))
+    validate(need(!is.null(rep) && rep >= 2, "Split plot needs at least two replications."))
+    main_labels <- sprintf("A%s", seq_len(main_trt))
+    sub_labels <- sprintf("B%s", seq_len(sub_trt))
+    fieldbook <- agricolae::design.split(main_labels, sub_labels, r = rep, serie = 0, seed = seed, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$block, fieldbook$plots, fieldbook$splots), , drop = FALSE]
+    plot_data <- transform(fieldbook, rep_num = as.numeric(block), main_num = as.numeric(plots), sub_num = as.numeric(splots), label = sprintf("%s/%s", as.character(main), as.character(sub)))
+    list(
+      design = design,
+      summary = data.frame(MainPlotTreatments = main_trt, SubPlotTreatments = sub_trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Replication = as.character(fieldbook$block), MainPlot = fieldbook$plots, SubPlot = fieldbook$splots, MainTreatment = as.character(fieldbook$main), SubTreatment = as.character(fieldbook$sub), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "Strip Plot")) {
+    validate(need(!is.null(main_trt) && main_trt >= 2, "Strip plot needs at least two horizontal treatments."))
+    validate(need(!is.null(sub_trt) && sub_trt >= 2, "Strip plot needs at least two vertical treatments."))
+    validate(need(!is.null(rep) && rep >= 2, "Strip plot needs at least two replications."))
+    main_labels <- sprintf("A%s", seq_len(main_trt))
+    sub_labels <- sprintf("B%s", seq_len(sub_trt))
+    fieldbook <- agricolae::design.strip(main_labels, sub_labels, r = rep, serie = 0, seed = seed, kinds = kind, randomization = TRUE)$book
+    fieldbook$row_key <- do.call(paste, as.data.frame(t(apply(fieldbook[4:5], 1, sort))))
+    fieldbook$col_key <- do.call(paste, as.data.frame(t(apply(fieldbook[2:3], 1, sort))))
+    fieldbook$Row <- match(fieldbook$row_key, unique(fieldbook$row_key))
+    fieldbook$Column <- match(fieldbook$col_key, unique(fieldbook$col_key))
+    plot_data <- transform(fieldbook, rep_num = as.numeric(block), row_num = Row, col_num = Column, label = sprintf("%s/%s", as.character(main1), as.character(main2)))
+    list(
+      design = design,
+      summary = data.frame(HorizontalTreatments = main_trt, VerticalTreatments = sub_trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Replication = as.character(fieldbook$block), Row = fieldbook$Row, Column = fieldbook$Column, HorizontalTreatment = as.character(fieldbook$main1), VerticalTreatment = as.character(fieldbook$main2), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else {
+    stop(sprintf("Unsupported layout design: %s", design))
+  }
 }
 
 run_pooled_anova <- function(df, alpha = 0.05) {

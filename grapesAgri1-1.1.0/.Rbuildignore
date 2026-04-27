@@ -1,0 +1,8 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+paper.md
+paper.bib
+LICENSE
+.travis.yml
+.github
+^joss$

@@ -3,41 +3,187 @@ portal_ui <- function(catalog = app_catalog) {
     tags$head(tags$style(research_station_styles)),
     div(class = "station-hero", h1("Research Analytics Station"), p("Cloud-ready Shiny suite for agricultural and experimental data analysis."), nav_links("portal", catalog)),
     fluidRow(
-      column(6, div(class = "station-card", h3("How researchers will use this suite"), p("Choose a module, upload CSV/XLSX data or paste a table, review assumptions, then export CSV tables and HTML reports."), tags$ul(tags$li("Public link access for v1."), tags$li("Shared validation and reporting patterns across modules."), tags$li("Deployment assets included for Docker, nginx, and Shiny Server.")))),
+      column(6, div(class = "station-card", h3("How researchers will use this suite"), p("Choose a module, upload CSV/XLSX data or paste a table, review assumptions, then export CSV tables, HTML reports, and randomized design plans where applicable."), tags$ul(tags$li("Public link access for v1."), tags$li("Shared validation and reporting patterns across modules."), tags$li("Deployment assets included for Docker, nginx, and Shiny Server.")))),
       column(6, div(class = "station-card", h3("Support"), p("Version 1.0 deployment scaffold"), p("Recommended host: single cloud VM with Docker Compose."), p("Update this section with station support contacts before production."), p("Modules are linked below.")))
     ),
     fluidRow(lapply(catalog[-1], function(app) {
-      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, LSD, and confidence summaries.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
+      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
     }))
   )
 }
 
 portal_server <- function(input, output, session) {}
 
+design_analyzer_ui <- function(nav_catalog = app_catalog) {
+  station_page(
+    "Design Analyzer",
+    "Generate randomized layout plans for common agricultural experiments and export the allocation table.",
+    "design-analyzer",
+    tagList(
+      selectInput("design_type", "Design type", choices = c("CRD", "RBD", "Split Plot", "Augmented RCBD", "Strip Plot")),
+      conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD'",
+        numericInput("trt", "Number of treatments", value = 4, min = 2)
+      ),
+      conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD' || input.design_type == 'Split Plot' || input.design_type == 'Augmented RCBD' || input.design_type == 'Strip Plot'",
+        numericInput("rep", "Replications / blocks", value = 3, min = 2)
+      ),
+      conditionalPanel("input.design_type == 'Split Plot' || input.design_type == 'Strip Plot'",
+        numericInput("main_trt", "Main / horizontal treatments", value = 3, min = 2),
+        numericInput("sub_trt", "Sub / vertical treatments", value = 3, min = 2)
+      ),
+      conditionalPanel("input.design_type == 'Augmented RCBD'",
+        numericInput("checks", "Number of checks", value = 3, min = 2),
+        numericInput("test_trt", "Number of test treatments", value = 6, min = 2)
+      ),
+      numericInput("seed", "Randomization seed", value = 1, min = 1),
+      build_help_box("What this module does", c("Creates a randomized fieldbook similar to the grapesAgri layout workflow.", "Use the seed to reproduce a layout exactly.", "Download the allocation table for field teams or reporting.")),
+      actionButton("generate_layout", "Generate layout", class = "btn-primary"),
+      tags$hr(),
+      downloadButton("download_layout_csv", "Download allocation CSV"),
+      downloadButton("download_layout_report", "Download HTML report"),
+      uiOutput("layout_error_msg")
+    ),
+    analysis_tabs(
+      tabPanel("Experiment Summary", tableOutput("layout_summary_table")),
+      tabPanel("Allocation Table", tableOutput("layout_fieldbook_table")),
+      tabPanel("Layout Plot", plotOutput("layout_plot", height = "520px"))
+    ),
+    nav_catalog = nav_catalog
+  )
+}
+
+design_analyzer_server <- function(input, output, session) {
+  err <- reactiveVal(NULL)
+  layout_plan <- eventReactive(input$generate_layout, {
+    err(NULL)
+    tryCatch(
+      run_design_layout(
+        design = input$design_type,
+        seed = input$seed,
+        trt = input$trt,
+        rep = input$rep,
+        main_trt = input$main_trt,
+        sub_trt = input$sub_trt,
+        checks = input$checks,
+        test_trt = input$test_trt
+      ),
+      error = function(e) {
+        err(conditionMessage(e))
+        NULL
+      }
+    )
+  })
+
+  output$layout_error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
+  output$layout_summary_table <- renderTable({ req(layout_plan()); layout_plan()$summary }, rownames = FALSE)
+  output$layout_fieldbook_table <- renderTable({ req(layout_plan()); layout_plan()$fieldbook }, rownames = FALSE)
+  output$layout_plot <- renderPlot({
+    req(layout_plan())
+    plan <- layout_plan()
+
+    if (identical(plan$design, "CRD")) {
+      desplot::desplot(
+        form = row ~ col,
+        data = plan$plot_data,
+        text = label,
+        out1 = row,
+        out2 = col,
+        main = "CRD Layout",
+        cex = 1.1
+      )
+    } else if (identical(plan$design, "RBD")) {
+      desplot::desplot(
+        form = block_num ~ plot_num,
+        data = plan$plot_data,
+        text = label,
+        out1 = block_num,
+        out2 = plot_num,
+        out2.gpar = list(col = "#547d43"),
+        main = "RBD Layout",
+        cex = 1.1
+      )
+    } else if (identical(plan$design, "Augmented RCBD")) {
+      desplot::desplot(
+        form = block_num ~ plot_num,
+        data = plan$plot_data,
+        text = label,
+        out1 = block_num,
+        out2 = plot_num,
+        main = "Augmented RCBD Layout",
+        cex = 1.1
+      )
+    } else if (identical(plan$design, "Split Plot")) {
+      desplot::desplot(
+        form = rep_num ~ main_num + sub_num,
+        data = plan$plot_data,
+        text = label,
+        out1 = rep_num,
+        out2 = sub_num,
+        main = "Split-Plot Layout",
+        cex = 1
+      )
+    } else if (identical(plan$design, "Strip Plot")) {
+      desplot::desplot(
+        form = rep_num ~ row_num + col_num,
+        data = plan$plot_data,
+        text = label,
+        out1 = rep_num,
+        out2 = col_num,
+        main = "Strip-Plot Layout",
+        cex = 1
+      )
+    }
+  })
+
+  output$download_layout_csv <- downloadHandler(
+    filename = function() sprintf("design-layout-%s.csv", gsub("[^a-z]+", "-", tolower(input$design_type))),
+    content = function(file) {
+      req(layout_plan())
+      write.csv(layout_plan()$fieldbook, file, row.names = FALSE)
+    }
+  )
+
+  output$download_layout_report <- downloadHandler(
+    filename = function() "design-layout-report.html",
+    content = function(file) {
+      req(layout_plan())
+      plan <- layout_plan()
+      save_html_report("Design Layout Report", list(
+        list(title = "Design summary", subtitle = sprintf("Design: %s, seed: %s", plan$design, input$seed), table = plan$summary),
+        list(title = "Allocation table", table = plan$fieldbook)
+      ), file)
+    }
+  )
+}
+
 crd_rbd_ui <- function(nav_catalog = app_catalog) {
   station_page(
     "CRD / RBD",
-    "Single-factor CRD and RBD analysis with ANOVA, LSD, key statistics, and report export.",
+    "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, key statistics, treatment plots, and report export.",
     "crd-rbd",
     tagList(
       selectInput("design", "Experimental design", choices = c("CRD", "RBD")),
+      selectInput("comparison_method", "Post-hoc comparison", choices = c("LSD", "DMRT", "Tukey"), selected = "LSD"),
       numericInput("alpha", "Significance level", value = 0.05, min = 0.01, max = 0.2, step = 0.01),
       fileInput("upload", "Upload CSV / TSV / XLSX", accept = c(".csv", ".tsv", ".txt", ".xls", ".xlsx")),
       textAreaInput("data_input", "Or paste a table", value = default_data[["CRD"]], rows = 11),
-      build_help_box("Expected format", c("First column should be the treatment label.", "Remaining columns should be replication columns.", "Use CRD for unblocked layouts and RBD when replications act as blocks.")),
+      selectInput("plot_type", "Treatment plot", choices = c("Mean with 95% CI" = "means", "Boxplot" = "boxplot")),
+      build_help_box("Expected format", c("First column should be the treatment label.", "Remaining columns should be replication columns.", "Use CRD for unblocked layouts and RBD when replications act as blocks.", "Post-hoc choices now mirror the upgraded grapesAgri workflow.")),
       actionButton("analyze", "Run analysis", class = "btn-primary"),
       tags$hr(),
-      selectInput("csv_table", "CSV table to download", choices = c("Long data", "ANOVA", "Key statistics", "Means", "LSD groups")),
+      selectInput("csv_table", "CSV table to download", choices = c("Long data", "ANOVA", "Key statistics", "Means", "Treatment summary", "Groups")),
       downloadButton("download_csv", "Download CSV"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("Long Data View", tableOutput("long_data_table")),
+      tabPanel("Means & CI", tableOutput("treatment_summary_table")),
       tabPanel("ANOVA Table", tableOutput("anova_table")),
       tabPanel("Key Statistics", tableOutput("stats_table")),
-      tabPanel("Means & CI", tableOutput("means_ci_table")),
-      tabPanel("LSD & Letter Groups", tableOutput("lsd_stats"), tags$br(), tableOutput("lsd_groups"))
+      tabPanel("Inference", verbatimTextOutput("inference_text")),
+      tabPanel("Post-hoc", tableOutput("lsd_stats"), tags$br(), tableOutput("lsd_groups")),
+      tabPanel("Treatment Plot", plotOutput("treatment_plot", height = "360px")),
+      tabPanel("Long Data View", tableOutput("long_data_table"))
     ),
     nav_catalog = nav_catalog
   )
@@ -48,7 +194,7 @@ crd_rbd_server <- function(input, output, session) {
   err <- reactiveVal(NULL)
   analysis <- eventReactive(input$analyze, {
     err(NULL)
-    tryCatch(run_design_analysis(read_dataset_input(input$upload, input$data_input), input$design, 2, 2, input$alpha), error = function(e) {
+    tryCatch(run_design_analysis(read_dataset_input(input$upload, input$data_input), input$design, 2, 2, input$alpha, input$comparison_method), error = function(e) {
       err(conditionMessage(e))
       NULL
     })
@@ -61,12 +207,31 @@ crd_rbd_server <- function(input, output, session) {
   output$means_ci_table <- renderTable({ req(analysis()); analysis()$means }, rownames = FALSE)
   output$lsd_stats <- renderTable({ req(analysis()); analysis()$lsd_stats }, rownames = FALSE)
   output$lsd_groups <- renderTable({ req(analysis()); analysis()$groups }, rownames = FALSE)
+  output$treatment_summary_table <- renderTable({ req(analysis()); analysis()$treatment_summary }, rownames = FALSE)
+  output$inference_text <- renderText({ req(analysis()); analysis()$inference })
+  output$treatment_plot <- renderPlot({
+    req(analysis())
+    if (identical(input$plot_type, "boxplot")) {
+      ggplot(analysis()$dataset, aes(x = Trt, y = Value, fill = Trt)) +
+        geom_boxplot(alpha = 0.85) +
+        theme_minimal() +
+        theme(legend.position = "none") +
+        labs(title = sprintf("%s response distribution", input$design), x = "Treatment", y = "Response")
+    } else {
+      ggplot(analysis()$treatment_summary, aes(x = Treatment, y = Mean, fill = Treatment)) +
+        geom_col(alpha = 0.9) +
+        geom_errorbar(aes(ymin = LowerCI, ymax = UpperCI), width = 0.2) +
+        theme_minimal() +
+        theme(legend.position = "none") +
+        labs(title = sprintf("%s treatment means with 95%% CI", input$design), x = "Treatment", y = "Mean response")
+    }
+  })
 
   output$download_csv <- downloadHandler(
     filename = function() sprintf("crd-rbd-%s.csv", gsub("[^a-z]+", "-", tolower(input$csv_table))),
     content = function(file) {
       req(analysis())
-      table_map <- list("Long data" = analysis()$dataset, "ANOVA" = analysis()$anova, "Key statistics" = analysis()$stats, "Means" = analysis()$means, "LSD groups" = analysis()$groups)
+      table_map <- list("Long data" = analysis()$dataset, "ANOVA" = analysis()$anova, "Key statistics" = analysis()$stats, "Means" = analysis()$means, "Treatment summary" = analysis()$treatment_summary, "Groups" = analysis()$groups)
       write.csv(table_map[[input$csv_table]], file, row.names = FALSE)
     }
   )
@@ -76,11 +241,218 @@ crd_rbd_server <- function(input, output, session) {
     content = function(file) {
       req(analysis())
       save_html_report("CRD / RBD Report", list(
-        list(title = "Dataset summary", subtitle = analysis()$report_note, table = head(analysis()$dataset, 20)),
+        list(title = "Treatment summary with confidence intervals", table = analysis()$treatment_summary),
         list(title = "ANOVA table", table = analysis()$anova),
         list(title = "Key statistics", table = analysis()$stats),
-        list(title = "Treatment means", table = analysis()$means),
-        list(title = "Letter grouping", table = analysis()$groups)
+        list(title = "Inference", text = analysis()$inference),
+        list(title = sprintf("%s summary", analysis()$comparison_method), table = analysis()$lsd_stats),
+        list(title = "Letter grouping", table = analysis()$groups),
+        list(title = "Dataset summary", subtitle = analysis()$report_note, table = head(analysis()$dataset, 20))
+      ), file)
+    }
+  )
+}
+
+descriptive_statistics_ui <- function(nav_catalog = app_catalog) {
+  station_page(
+    "Descriptive Statistics",
+    "Summarize numeric variables, compare groups, inspect distributions, and check normality.",
+    "descriptive-statistics",
+    tagList(
+      fileInput("upload", "Upload CSV / TSV / XLSX", accept = c(".csv", ".tsv", ".txt", ".xls", ".xlsx")),
+      textAreaInput("data_input", "Or paste a table", value = default_data[["Descriptive Statistics"]], rows = 11),
+      selectInput("analysis_type", "Analysis type", choices = c("Summary" = "summary", "Summary by group" = "sumbygrp", "Boxplot" = "boxplot", "Histogram" = "histogram", "Q-Q plot" = "qqplot", "Normality test" = "nt"), selected = "summary"),
+      uiOutput("desc_variable_ui"),
+      uiOutput("desc_group_ui"),
+      actionButton("desc_analyze", "Run descriptive analysis", class = "btn-primary"),
+      tags$hr(),
+      downloadButton("download_desc_csv", "Download CSV"),
+      downloadButton("download_desc_report", "Download HTML report"),
+      uiOutput("error_msg")
+    ),
+    analysis_tabs(
+      tabPanel("Data preview", tableOutput("desc_data_table")),
+      tabPanel("Summary", tableOutput("desc_summary_table")),
+      tabPanel("Group summary", tableOutput("desc_group_table")),
+      tabPanel("Plot", plotOutput("desc_plot", height = "520px")),
+      tabPanel("Normality", verbatimTextOutput("desc_normality_text"))
+    ),
+    nav_catalog = nav_catalog
+  )
+}
+
+descriptive_statistics_server <- function(input, output, session) {
+  err <- reactiveVal(NULL)
+  dataset <- reactive({
+    tryCatch(read_dataset_input(input$upload, input$data_input), error = function(e) {
+      err(conditionMessage(e)); NULL
+    })
+  })
+
+  output$desc_variable_ui <- renderUI({
+    df <- dataset()
+    if (is.null(df)) return(NULL)
+    numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
+    if (length(numeric_cols) == 0) return(div(class = "alert alert-warning", "Upload data with numeric columns to continue."))
+    if (input$analysis_type %in% c("summary", "sumbygrp", "boxplot", "histogram", "qqplot", "nt")) {
+      selectInput("desc_vars", "Numeric variable(s)", choices = numeric_cols, selected = numeric_cols[1], multiple = input$analysis_type %in% c("summary", "sumbygrp"))
+    }
+  })
+
+  output$desc_group_ui <- renderUI({
+    df <- dataset()
+    if (is.null(df)) return(NULL)
+    factor_cols <- names(df)[vapply(df, function(x) is.factor(x) || is.character(x), logical(1))]
+    if (input$analysis_type == "sumbygrp") {
+      selectInput("desc_group", "Group variable", choices = factor_cols, selected = factor_cols[1])
+    } else if (input$analysis_type == "boxplot") {
+      selectInput("desc_group", "Color by group (optional)", choices = c(None = "", factor_cols), selected = "")
+    } else {
+      NULL
+    }
+  })
+
+  desc_analysis <- eventReactive(input$desc_analyze, {
+    err(NULL)
+    tryCatch(
+      run_descriptive_analysis(read_dataset_input(input$upload, input$data_input), input$analysis_type, input$desc_vars, input$desc_group),
+      error = function(e) {
+        err(conditionMessage(e)); NULL
+      }
+    )
+  })
+
+  output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
+  output$desc_data_table <- renderTable({ req(desc_analysis()); head(desc_analysis()$dataset, 50) }, rownames = FALSE)
+  output$desc_summary_table <- renderTable({ req(desc_analysis()); desc_analysis()$summary }, rownames = FALSE)
+  output$desc_group_table <- renderTable({ req(desc_analysis()); desc_analysis()$by_group }, rownames = FALSE)
+  output$desc_plot <- renderPlot({ req(desc_analysis()); desc_analysis()$plot_obj }, height = 520)
+  output$desc_normality_text <- renderText({ req(desc_analysis()); paste(desc_analysis()$normality, collapse = "\n") })
+
+  output$download_desc_csv <- downloadHandler(
+    filename = function() "descriptive-statistics-data.csv",
+    content = function(file) {
+      req(desc_analysis())
+      write.csv(desc_analysis()$summary, file, row.names = FALSE)
+    }
+  )
+
+  output$download_desc_report <- downloadHandler(
+    filename = function() "descriptive-statistics-report.html",
+    content = function(file) {
+      req(desc_analysis())
+      result <- desc_analysis()
+      save_html_report("Descriptive Statistics Report", list(
+        list(title = "Data preview", table = head(result$dataset, 20)),
+        list(title = "Summary statistics", table = result$summary),
+        list(title = "Group summary", table = result$by_group),
+        list(title = "Notes", text = paste(result$normality, collapse = "\n"))
+      ), file)
+    }
+  )
+}
+
+compare_means_ui <- function(nav_catalog = app_catalog) {
+  station_page(
+    "Compare Means",
+    "One-sample, two-sample, Welch and paired t-test workflows with diagnostics and plots.",
+    "compare-means",
+    tagList(
+      fileInput("upload", "Upload CSV / TSV / XLSX", accept = c(".csv", ".tsv", ".txt", ".xls", ".xlsx")),
+      textAreaInput("data_input", "Or paste a table", value = default_data[["Compare Means"]], rows = 11),
+      selectInput("tt_type", "Test type", choices = c("One-sample t-test" = "one-sample", "Two-sample t-test" = "two-sample", "Welch t-test" = "welch", "Paired t-test" = "paired")),
+      uiOutput("tt_value_var_ui"),
+      uiOutput("tt_group_var_ui"),
+      uiOutput("tt_pair_vars_ui"),
+      numericInput("tt_mu", "Population mean for one-sample test", value = 0),
+      checkboxInput("tt_var_equal", "Assume equal variance for two-sample t-test", value = TRUE),
+      actionButton("tt_analyze", "Run t-test", class = "btn-primary"),
+      tags$hr(),
+      downloadButton("download_tt_csv", "Download CSV"),
+      downloadButton("download_tt_report", "Download HTML report"),
+      uiOutput("error_msg")
+    ),
+    analysis_tabs(
+      tabPanel("Data preview", tableOutput("tt_data_table")),
+      tabPanel("Descriptive summary", tableOutput("tt_desc_table")),
+      tabPanel("Variance check", tableOutput("tt_variance_table")),
+      tabPanel("Test result", tableOutput("tt_result_table")),
+      tabPanel("Plot", plotOutput("tt_plot", height = "520px"))
+    ),
+    nav_catalog = nav_catalog
+  )
+}
+
+compare_means_server <- function(input, output, session) {
+  err <- reactiveVal(NULL)
+  dataset <- reactive({
+    tryCatch(read_dataset_input(input$upload, input$data_input), error = function(e) {
+      err(conditionMessage(e)); NULL
+    })
+  })
+
+  output$tt_value_var_ui <- renderUI({
+    df <- dataset()
+    if (is.null(df)) return(NULL)
+    numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
+    if (length(numeric_cols) == 0) return(div(class = "alert alert-warning", "Upload data with numeric columns to continue."))
+    selectInput("tt_value", "Outcome variable", choices = numeric_cols, selected = numeric_cols[1])
+  })
+
+  output$tt_group_var_ui <- renderUI({
+    req(input$tt_type)
+    df <- dataset()
+    if (is.null(df) || !input$tt_type %in% c("two-sample", "welch")) return(NULL)
+    factor_cols <- names(df)[vapply(df, function(x) is.factor(x) || is.character(x), logical(1))]
+    selectInput("tt_group", "Grouping variable", choices = factor_cols, selected = factor_cols[1])
+  })
+
+  output$tt_pair_vars_ui <- renderUI({
+    req(input$tt_type)
+    df <- dataset()
+    if (is.null(df) || input$tt_type != "paired") return(NULL)
+    numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
+    tagList(
+      selectInput("tt_pair_left", "Paired column 1", choices = numeric_cols, selected = numeric_cols[1]),
+      selectInput("tt_pair_right", "Paired column 2", choices = numeric_cols, selected = numeric_cols[min(2, length(numeric_cols))])
+    )
+  })
+
+  tt_analysis <- eventReactive(input$tt_analyze, {
+    err(NULL)
+    tryCatch(
+      run_ttest_analysis(read_dataset_input(input$upload, input$data_input), input$tt_type, input$tt_value, input$tt_group, input$tt_pair_left, input$tt_pair_right, input$tt_mu, input$tt_var_equal),
+      error = function(e) {
+        err(conditionMessage(e)); NULL
+      }
+    )
+  })
+
+  output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
+  output$tt_data_table <- renderTable({ req(tt_analysis()); head(tt_analysis()$dataset, 50) }, rownames = FALSE)
+  output$tt_desc_table <- renderTable({ req(tt_analysis()); tt_analysis()$summary }, rownames = FALSE)
+  output$tt_variance_table <- renderTable({ req(tt_analysis()); tt_analysis()$variance }, rownames = FALSE)
+  output$tt_result_table <- renderTable({ req(tt_analysis()); tt_analysis()$test_result }, rownames = FALSE)
+  output$tt_plot <- renderPlot({ req(tt_analysis()); tt_analysis()$plot_obj }, height = 520)
+
+  output$download_tt_csv <- downloadHandler(
+    filename = function() "compare-means-summary.csv",
+    content = function(file) {
+      req(tt_analysis())
+      write.csv(tt_analysis()$summary, file, row.names = FALSE)
+    }
+  )
+
+  output$download_tt_report <- downloadHandler(
+    filename = function() "compare-means-report.html",
+    content = function(file) {
+      req(tt_analysis())
+      result <- tt_analysis()
+      save_html_report("Compare Means Report", list(
+        list(title = "Data preview", table = head(result$dataset, 20)),
+        list(title = "Descriptive summary", table = result$summary),
+        list(title = "Variance comparison", table = result$variance),
+        list(title = "t-test result", table = result$test_result)
       ), file)
     }
   )

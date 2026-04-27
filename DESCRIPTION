@@ -1,18 +1,23 @@
-Package: drdesignsuite
-Type: Shiny
-Title: Research Station Analytics Suite
+Package: DrDesign
+Type: Package
+Title: Shiny Apps for Agricultural Experimental Data Analysis
 Version: 1.0.0
-Authors@R: person("Research", "Station", email = "support@example.org", role = c("aut", "cre"))
-Description: Multi-app Shiny suite for CRD/RBD, factorial design, pooled ANOVA, split-plot, and correlation-regression analysis.
-License: MIT
+Authors@R: person(given = "Saurav", family = "Singla", email = "saurav@example.com", role = c("aut", "cre"))
+Description: Allows users to perform analysis of Agricultural experimental data in CRD/RBD, factorial design, pooled ANOVA, split-plot, and correlation-regression analysis. It is further extended to plant breeding trails for Multi Environmental Trait Analysis. It is capable of producing clean and systematic pdf and word based outputs. A Graphical User Interface will pop up on using the functions in this package.
+License: GPL-3
 Encoding: UTF-8
-Imports:
-    shiny,
+RoxygenNote: 7.2.3
+Imports: 
+    shiny (>= 1.6.0),
+    shinyWidgets (>= 0.6.0),
+    rmarkdown (>= 2.7),
+    knitr (>= 1.31),
     htmltools,
     readxl,
     dplyr,
     tidyr,
     agricolae,
+    desplot,
     ggplot2,
     corrplot,
     RColorBrewer,
@@ -21,4 +26,8 @@ Imports:
     multcompView,
     car,
     lme4,
-    lmerTest
+    lmerTest,
+    metan
+Suggests:
+    shinytest,
+    testthat

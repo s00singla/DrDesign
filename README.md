@@ -5,6 +5,7 @@ This repository now contains a cloud-ready multi-app Shiny suite for research st
 ## Apps
 
 - `/` portal for navigation, support text, and module launch
+- `/design-analyzer/` randomized field layout generator for CRD, RBD, split-plot, strip-plot, and augmented RCBD
 - `/crd-rbd/` single-factor CRD and RBD
 - `/factorial-design/` factorial CRD and factorial RBD
 - `/pooled-anova/` pooled analysis across years or seasons

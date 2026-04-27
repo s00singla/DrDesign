@@ -5,7 +5,7 @@ account: sauravsingla
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 17009925
-bundleId: 11786845
+bundleId: 11806252
 url: https://sauravsingla.shinyapps.io/DrDesignSingla/
 version: 1
 asMultiple: FALSE

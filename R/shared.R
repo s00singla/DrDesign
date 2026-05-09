@@ -8,7 +8,7 @@ library(readxl)
 
 app_catalog <- list(
   list(key = "portal", label = "Portal", path = "/"),
-  list(key = "design-analyzer", label = "Design Analyzer", path = "/design-analyzer/"),
+  list(key = "design-analyzer", label = "Design Randomizer", path = "/design-analyzer/"),
   list(key = "crd-rbd", label = "CRD / RBD", path = "/crd-rbd/"),
   list(key = "factorial-design", label = "Factorial Design", path = "/factorial-design/"),
   list(key = "pooled-anova", label = "Pooled ANOVA", path = "/pooled-anova/"),
@@ -20,7 +20,7 @@ app_catalog <- list(
 
 local_app_catalog <- list(
   list(key = "portal", label = "Portal", path = "./"),
-  list(key = "design-analyzer", label = "Design Analyzer", path = "?app=design-analyzer"),
+  list(key = "design-analyzer", label = "Design Randomizer", path = "?app=design-analyzer"),
   list(key = "crd-rbd", label = "CRD / RBD", path = "?app=crd-rbd"),
   list(key = "factorial-design", label = "Factorial Design", path = "?app=factorial-design"),
   list(key = "pooled-anova", label = "Pooled ANOVA", path = "?app=pooled-anova"),

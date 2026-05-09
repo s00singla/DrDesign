@@ -16,7 +16,7 @@ portal_server <- function(input, output, session) {}
 
 design_analyzer_ui <- function(nav_catalog = app_catalog) {
   station_page(
-    "Design Analyzer",
+    "Design Randomizer",
     "Generate randomized layout plans for common agricultural experiments and export the allocation table.",
     "design-analyzer",
     tagList(

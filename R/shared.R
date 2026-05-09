@@ -73,13 +73,23 @@ normalize_columns <- function(df) {
 read_pasted_table <- function(text) {
   text <- trimws(text)
   validate(need(nchar(text) > 0, "Paste a table or upload a file to continue."))
+
   try_tab <- tryCatch(read.table(text = text, header = TRUE, sep = "\t", stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
   if (!is.null(try_tab) && ncol(try_tab) > 1) {
     return(normalize_columns(try_tab))
   }
+
+  try_space <- tryCatch(read.table(text = text, header = TRUE, sep = "", stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
+  if (!is.null(try_space) && ncol(try_space) > 1) {
+    return(normalize_columns(try_space))
+  }
+
   try_csv <- tryCatch(read.csv(text = text, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
-  validate(need(!is.null(try_csv), "The pasted data could not be parsed as tabular text."))
-  normalize_columns(try_csv)
+  if (!is.null(try_csv) && ncol(try_csv) > 1) {
+    return(normalize_columns(try_csv))
+  }
+
+  stop("The pasted data could not be parsed as a table. Use tabs, spaces, commas, or upload a file.")
 }
 
 read_uploaded_table <- function(path) {

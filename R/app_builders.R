@@ -285,6 +285,7 @@ crd_rbd_server <- function(input, output, session) {
       )
     }
   )
+
 }
 
 descriptive_statistics_ui <- function(nav_catalog = app_catalog) {
@@ -686,21 +687,46 @@ split_plot_ui <- function(nav_catalog = app_catalog) {
       numericInput("alpha", "Significance level", value = 0.05, min = 0.01, max = 0.2, step = 0.01),
       fileInput("upload", "Upload CSV / TSV / XLSX", accept = c(".csv", ".tsv", ".txt", ".xls", ".xlsx")),
       textAreaInput("data_input", "Or paste a table", value = split_plot_example, rows = 11),
-      build_help_box("Expected columns", c("Use Rep/MainPlot/SubPlot/Value or W/A/B/Y.", "Rep or W is the block/random whole-plot factor.", "MainPlot/A and SubPlot/B are the treatment factors.")),
+      uiOutput("split_rep_var_ui"),
+      uiOutput("split_mainplot_var_ui"),
+      uiOutput("split_subplot_var_ui"),
+      uiOutput("split_response_var_ui"),
+      build_help_box("Expected columns", c("Choose the correct column for Rep, MainPlot, SubPlot, and Value after pasting or uploading data.", "Common shorthand: W/A/B/Y or any custom names.", "Replication is the whole-plot factor, MainPlot and SubPlot are treatment factors.")),
       actionButton("analyze", "Run split-plot analysis", class = "btn-primary"),
       tags$hr(),
-      selectInput("csv_table", "CSV table to download", choices = c("Full ANOVA", "Additive ANOVA", "EMMeans main plot", "EMMeans subplot", "Tukey main plot", "Tukey subplot", "CLD main plot", "CLD subplot", "Diagnostics")),
+      selectInput("csv_table", "CSV table to download", choices = c("Full ANOVA", "Additive ANOVA", "Split ANOVA", "Main plot means", "Subplot means", "Interaction means", "Split LSD/CV summary", "EMMeans main plot", "EMMeans subplot", "Tukey main plot", "Tukey subplot", "CLD main plot", "CLD subplot", "Diagnostics")),
       downloadButton("download_csv", "Download CSV"),
+      downloadButton("download_split_pdf_report", "Download PDF report"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
     analysis_tabs(
       tabPanel("EDA", verbatimTextOutput("data_summary_text"), plotOutput("boxplot_plot", height = "320px"), plotOutput("interaction_plot_chart", height = "320px")),
       tabPanel("Model ANOVA", tableOutput("full_anova_table"), tags$br(), tableOutput("additive_anova_table"), tags$br(), tableOutput("assumptions_table")),
+      tabPanel("Split Plot Results",
+        tags$h4("Clean split-plot ANOVA"),
+        tableOutput("split_anova_table"),
+        tags$br(),
+        tags$h4("Main plot means"),
+        tableOutput("split_main_means_table"),
+        tags$br(),
+        tags$h4("Subplot means"),
+        tableOutput("split_sub_means_table"),
+        tags$br(),
+        tags$h4("Interaction means"),
+        tableOutput("split_interaction_means_table"),
+        tags$br(),
+        tags$h4("LSD and CV summary"),
+        tableOutput("split_lsd_cv_table"),
+        tags$br(),
+        plotOutput("lsd_main_plot", height = "280px"),
+        plotOutput("lsd_sub_plot", height = "280px"),
+        plotOutput("split_interaction_mean_plot", height = "320px")
+      ),
       tabPanel("Diagnostics", verbatimTextOutput("final_summary_text"), plotOutput("diagnostic_scatter_plot", height = "320px"), plotOutput("residual_qq_plot", height = "320px"), plotOutput("random_effects_qq_plot", height = "320px"), tableOutput("diagnostics_table")),
       tabPanel("Estimated Means", tableOutput("emmeans_main_table"), tags$br(), tableOutput("emmeans_sub_table"), tags$br(), tableOutput("emmeans_interaction_table"), plotOutput("lsmean_main_plot_chart", height = "320px"), plotOutput("lsmean_sub_plot_chart", height = "320px")),
       tabPanel("Post-hoc", tableOutput("tukey_main_table"), tags$br(), tableOutput("tukey_sub_table"), tags$br(), tableOutput("cld_main_table"), tags$br(), tableOutput("cld_sub_table")),
-      tabPanel("Long Data View", tableOutput("long_data_table"))
+      tabPanel("Long Data View", DT::dataTableOutput("long_data_table"))
     )
     ,
     nav_catalog = nav_catalog
@@ -708,67 +734,662 @@ split_plot_ui <- function(nav_catalog = app_catalog) {
 }
 
 split_plot_server <- function(input, output, session) {
+
+  ##########################################################
+  # ERROR HOLDER
+  ##########################################################
+
   err <- reactiveVal(NULL)
-  analysis <- eventReactive(input$analyze, {
-    err(NULL)
-    tryCatch(run_split_plot(read_dataset_input(input$upload, input$data_input), input$alpha), error = function(e) {
-      err(conditionMessage(e))
-      NULL
-    })
+
+  ##########################################################
+  # DATASET
+  ##########################################################
+
+  dataset <- reactive({
+
+    tryCatch(
+
+      read_dataset_input(
+        input$upload,
+        input$data_input
+      ),
+
+      error = function(e){
+
+        err(conditionMessage(e))
+
+        NULL
+      }
+    )
   })
 
-  output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$data_summary_text <- renderText({ req(analysis()); paste(analysis()$data_summary, collapse = "\n") })
-  output$full_anova_table <- renderTable({ req(analysis()); analysis()$full_anova }, rownames = FALSE)
-  output$additive_anova_table <- renderTable({ req(analysis()); analysis()$additive_anova }, rownames = FALSE)
-  output$assumptions_table <- renderTable({ req(analysis()); analysis()$assumptions }, rownames = FALSE)
-  output$final_summary_text <- renderText({ req(analysis()); paste(analysis()$final_summary, collapse = "\n") })
-  output$emmeans_main_table <- renderTable({ req(analysis()); analysis()$emmeans_main }, rownames = FALSE)
-  output$emmeans_sub_table <- renderTable({ req(analysis()); analysis()$emmeans_sub }, rownames = FALSE)
-  output$emmeans_interaction_table <- renderTable({ req(analysis()); analysis()$emmeans_interaction }, rownames = FALSE)
-  output$tukey_main_table <- renderTable({ req(analysis()); analysis()$tukey_main }, rownames = FALSE)
-  output$tukey_sub_table <- renderTable({ req(analysis()); analysis()$tukey_sub }, rownames = FALSE)
-  output$cld_main_table <- renderTable({ req(analysis()); analysis()$cld_main }, rownames = FALSE)
-  output$cld_sub_table <- renderTable({ req(analysis()); analysis()$cld_sub }, rownames = FALSE)
-  output$diagnostics_table <- renderTable({ req(analysis()); analysis()$diagnostics }, rownames = FALSE)
-  output$long_data_table <- renderTable({ req(analysis()); analysis()$dataset }, rownames = FALSE)
-  output$boxplot_plot <- renderPlot({ req(analysis()); print(analysis()$boxplot_obj) })
-  output$interaction_plot_chart <- renderPlot({ req(analysis()); print(analysis()$interaction_plot) })
-  output$lsmean_main_plot_chart <- renderPlot({ req(analysis()); print(analysis()$lsmean_main_plot) })
-  output$lsmean_sub_plot_chart <- renderPlot({ req(analysis()); print(analysis()$lsmean_sub_plot) })
+  ##########################################################
+  # VARIABLE SELECTION UI
+  ##########################################################
+
+  output$split_rep_var_ui <- renderUI({
+
+    df <- dataset()
+
+    validate(
+      need(!is.null(df),
+           "Upload or paste data first.")
+    )
+
+    choices <- names(df)
+
+    selectInput(
+      "rep_var",
+      "Replication variable",
+      choices = choices,
+      selected =
+        if("Rep" %in% choices) "Rep"
+        else choices[1]
+    )
+  })
+
+
+  output$split_mainplot_var_ui <- renderUI({
+
+    df <- dataset()
+
+    validate(
+      need(!is.null(df),
+           "Upload or paste data first.")
+    )
+
+    choices <- names(df)
+
+    selectInput(
+      "mainplot_var",
+      "Main plot variable",
+      choices = choices,
+      selected =
+        if("MainPlot" %in% choices) "MainPlot"
+        else if("A" %in% choices) "A"
+        else choices[min(2,length(choices))]
+    )
+  })
+
+
+  output$split_subplot_var_ui <- renderUI({
+
+    df <- dataset()
+
+    validate(
+      need(!is.null(df),
+           "Upload or paste data first.")
+    )
+
+    choices <- names(df)
+
+    selectInput(
+      "subplot_var",
+      "Sub plot variable",
+      choices = choices,
+      selected =
+        if("SubPlot" %in% choices) "SubPlot"
+        else if("B" %in% choices) "B"
+        else choices[min(3,length(choices))]
+    )
+  })
+
+
+  output$split_response_var_ui <- renderUI({
+
+    df <- dataset()
+
+    validate(
+      need(!is.null(df),
+           "Upload or paste data first.")
+    )
+
+    numeric_cols <- names(df)[
+      sapply(df,is.numeric)
+    ]
+
+    validate(
+      need(length(numeric_cols)>0,
+           "No numeric columns found.")
+    )
+
+    selectInput(
+      "response_var",
+      "Response variable",
+      choices = numeric_cols,
+      selected = numeric_cols[1]
+    )
+  })
+
+  ##########################################################
+  # ANALYSIS
+  ##########################################################
+
+  analysis <- eventReactive(
+    input$analyze,
+    {
+
+      err(NULL)
+
+      req(dataset())
+
+      validate(
+        need(
+          length(unique(c(
+            input$rep_var,
+            input$mainplot_var,
+            input$subplot_var,
+            input$response_var
+          ))) == 4,
+
+          "All variables must be different."
+        )
+      )
+
+      tryCatch(
+
+        run_split_plot(
+          dataset(),
+          input$rep_var,
+          input$mainplot_var,
+          input$subplot_var,
+          input$response_var,
+          input$alpha
+        ),
+
+        error = function(e){
+
+          err(conditionMessage(e))
+
+          NULL
+        }
+      )
+    }
+  )
+
+  ##########################################################
+  # ERROR DISPLAY
+  ##########################################################
+
+  output$error_msg <- renderUI({
+
+    if(!is.null(err())){
+
+      div(
+        class = "alert alert-danger",
+
+        tags$b("Error: "),
+
+        err()
+      )
+    }
+  })
+
+  ##########################################################
+  # TEXT OUTPUTS
+  ##########################################################
+
+  output$data_summary_text <- renderText({
+
+    req(analysis())
+
+    paste(
+      analysis()$data_summary,
+      collapse = "\n"
+    )
+  })
+
+
+  output$final_summary_text <- renderText({
+
+    req(analysis())
+
+    paste(
+      analysis()$final_summary,
+      collapse = "\n"
+    )
+  })
+
+  ##########################################################
+  # SAFE TABLE RENDERER
+  ##########################################################
+
+  safe_table <- function(obj){
+
+    if(is.null(obj)){
+
+      return(NULL)
+    }
+
+    if(is.list(obj) &&
+       !is.data.frame(obj)){
+
+      obj <- as.data.frame(
+        do.call(
+          rbind,
+          lapply(obj,unlist)
+        )
+      )
+    }
+
+    obj
+  }
+
+  ##########################################################
+  # TABLE OUTPUTS
+  ##########################################################
+
+  output$full_anova_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$full_anova)
+  }, rownames = FALSE)
+
+  output$additive_anova_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$additive_anova)
+  }, rownames = FALSE)
+
+  output$assumptions_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$assumptions)
+  }, rownames = FALSE)
+
+  output$split_anova_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$split_anova)
+  }, rownames = FALSE)
+
+  output$split_main_means_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$split_main_means)
+  }, rownames = FALSE)
+
+  output$split_sub_means_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$split_sub_means)
+  }, rownames = FALSE)
+
+  output$split_interaction_means_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$split_interaction_means)
+  }, rownames = FALSE)
+
+  output$split_lsd_cv_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$split_lsd_cv)
+  }, rownames = FALSE)
+
+  output$emmeans_main_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$emmeans_main)
+  }, rownames = FALSE)
+
+  output$emmeans_sub_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$emmeans_sub)
+  }, rownames = FALSE)
+
+  output$emmeans_interaction_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$emmeans_interaction)
+  }, rownames = FALSE)
+
+  output$tukey_main_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$tukey_main)
+  }, rownames = FALSE)
+
+  output$tukey_sub_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$tukey_sub)
+  }, rownames = FALSE)
+
+  output$cld_main_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$cld_main)
+  }, rownames = FALSE)
+
+  output$cld_sub_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$cld_sub)
+  }, rownames = FALSE)
+
+  output$diagnostics_table <- renderTable({
+    req(analysis())
+    safe_table(analysis()$diagnostics)
+  }, rownames = FALSE)
+
+  ##########################################################
+  # LARGE DATA TABLE
+  ##########################################################
+
+  output$long_data_table <- DT::renderDataTable({
+
+    req(analysis())
+
+    analysis()$dataset
+
+  },
+  options = list(
+    pageLength = 10,
+    scrollX = TRUE
+  ))
+
+  ##########################################################
+  # SAFE PLOT FUNCTION
+  ##########################################################
+
+  safe_plot <- function(plot_obj){
+
+    validate(
+      need(
+        !is.null(plot_obj),
+        "Plot unavailable"
+      )
+    )
+
+    print(plot_obj)
+  }
+
+  ##########################################################
+  # PLOTS
+  ##########################################################
+
+  output$boxplot_plot <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$boxplot_obj)
+  })
+
+  output$interaction_plot_chart <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$interaction_plot)
+  })
+
+  output$lsmean_main_plot_chart <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$lsmean_main_plot)
+  })
+
+  output$lsmean_sub_plot_chart <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$lsmean_sub_plot)
+  })
+
+  output$lsd_main_plot <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$lsd_main_plot)
+  })
+
+  output$lsd_sub_plot <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$lsd_sub_plot)
+  })
+
+  output$split_interaction_mean_plot <- renderPlot({
+    req(analysis())
+    safe_plot(analysis()$split_interaction_mean_plot)
+  })
+
+  ##########################################################
+  # DIAGNOSTIC PLOTS
+  ##########################################################
+
   output$diagnostic_scatter_plot <- renderPlot({
+
     req(analysis())
-    plot(analysis()$fitted_final, analysis()$residuals_final, xlab = "Fitted values", ylab = "Residuals", main = "Residuals vs Fitted")
-    abline(h = 0, lty = 2, col = "red")
+
+    validate(
+      need(
+        !is.null(analysis()$fitted_final),
+        "Diagnostics unavailable"
+      )
+    )
+
+    plot(
+      analysis()$fitted_final,
+      analysis()$residuals_final,
+
+      xlab = "Fitted values",
+      ylab = "Residuals",
+
+      main = "Residuals vs Fitted"
+    )
+
+    abline(h = 0,
+           lty = 2,
+           col = "red")
   })
+
+
   output$residual_qq_plot <- renderPlot({
+
     req(analysis())
-    qqnorm(analysis()$residuals_final, main = "Residual Q-Q Plot")
-    qqline(analysis()$residuals_final, col = "red")
+
+    qqnorm(
+      analysis()$residuals_final,
+
+      main = "Residual Q-Q Plot"
+    )
+
+    qqline(
+      analysis()$residuals_final,
+      col = "red"
+    )
   })
+
+
   output$random_effects_qq_plot <- renderPlot({
+
     req(analysis())
-    random_vals <- analysis()$random_effects[[analysis()$random_effect_column]]
-    qqnorm(random_vals, main = "Random Effects Q-Q Plot")
-    qqline(random_vals, col = "red")
+
+    reffects <- analysis()$random_effects
+    rcol <- analysis()$random_effect_column
+
+    validate(
+      need(!is.null(reffects), "Random effects unavailable"),
+      need(!is.null(rcol), "Random effect column missing"),
+      need(rcol %in% names(reffects), "Random effect column not found")
+    )
+
+    random_vals <- reffects[[rcol]]
+
+    validate(
+      need(length(random_vals) > 0, "No random effects available")
+    )
+
+    qqnorm(
+      random_vals,
+      main = "Random Effects Q-Q Plot"
+    )
+
+    qqline(
+      random_vals,
+      col = "red"
+    )
   })
+
+  report_params <- reactive({
+    req(analysis())
+
+    residual_plot <- ggplot2::ggplot(
+      data.frame(Fitted = analysis()$fitted_final, Residual = analysis()$residuals_final),
+      ggplot2::aes(x = Fitted, y = Residual)
+    ) +
+      ggplot2::geom_point(color = "#244130") +
+      ggplot2::geom_hline(yintercept = 0, linetype = 2, color = "red") +
+      ggplot2::theme_minimal() +
+      ggplot2::labs(title = "Residuals vs Fitted", x = "Fitted values", y = "Residuals")
+
+    residual_qq_plot <- ggplot2::ggplot(
+      data.frame(Residual = analysis()$residuals_final),
+      ggplot2::aes(sample = Residual)
+    ) +
+      ggplot2::stat_qq(color = "#244130") +
+      ggplot2::stat_qq_line(color = "red") +
+      ggplot2::theme_minimal() +
+      ggplot2::labs(title = "Residual Q-Q Plot")
+
+    random_effects <- analysis()$random_effects
+    random_effect_column <- analysis()$random_effect_column
+    random_effect_qq_plot <- NULL
+    if (!is.null(random_effects) &&
+        !is.null(random_effect_column) &&
+        random_effect_column %in% names(random_effects)) {
+      random_effect_qq_plot <- ggplot2::ggplot(
+        data.frame(RandomEffect = random_effects[[random_effect_column]]),
+        ggplot2::aes(sample = RandomEffect)
+      ) +
+        ggplot2::stat_qq(color = "#244130") +
+        ggplot2::stat_qq_line(color = "red") +
+        ggplot2::theme_minimal() +
+        ggplot2::labs(title = "Random Effects Q-Q Plot")
+    }
+
+    list(
+      report_title = "Split Plot Analysis Report",
+      design_name = "Split Plot",
+      alpha = input$alpha,
+      comparison_method = "Tukey",
+      descriptive_stats = safe_table(analysis()$diagnostics),
+      summary_stats = safe_table(analysis()$split_lsd_cv),
+      anova_table = safe_table(analysis()$split_anova),
+      key_statistics = safe_table(analysis()$assumptions),
+      mean_table = safe_table(analysis()$split_interaction_means),
+      posthoc_summary = safe_table(analysis()$tukey_main),
+      posthoc_table = safe_table(analysis()$cld_main),
+      dataset_preview = head(analysis()$dataset, 20),
+      inference_text = "The split-plot module fits the selected mixed model, reports split-plot ANOVA strata, computes observed means, estimated marginal means, Tukey comparisons, compact letter displays, LSD/CV summaries, and model diagnostics.",
+      report_note = analysis()$report_note,
+      plot_errorbar = analysis()$interaction_plot,
+      extra_tables = list(
+        "Full Mixed-Model ANOVA" = safe_table(analysis()$full_anova),
+        "Additive Mixed-Model ANOVA" = safe_table(analysis()$additive_anova),
+        "Assumptions and Model Choice" = safe_table(analysis()$assumptions),
+        "Clean Split-Plot ANOVA" = safe_table(analysis()$split_anova),
+        "Main Plot Means" = safe_table(analysis()$split_main_means),
+        "Subplot Means" = safe_table(analysis()$split_sub_means),
+        "Interaction Means" = safe_table(analysis()$split_interaction_means),
+        "LSD and CV Summary" = safe_table(analysis()$split_lsd_cv),
+        "Estimated Means - Main Plot" = safe_table(analysis()$emmeans_main),
+        "Estimated Means - Subplot" = safe_table(analysis()$emmeans_sub),
+        "Estimated Means - Interaction" = safe_table(analysis()$emmeans_interaction),
+        "Tukey Comparisons - Main Plot" = safe_table(analysis()$tukey_main),
+        "Tukey Comparisons - Subplot" = safe_table(analysis()$tukey_sub),
+        "Compact Letter Display - Main Plot" = safe_table(analysis()$cld_main),
+        "Compact Letter Display - Subplot" = safe_table(analysis()$cld_sub),
+        "Diagnostics" = safe_table(analysis()$diagnostics)
+      ),
+      extra_text_sections = list(
+        "Data Summary" = analysis()$data_summary,
+        "Final Model Summary" = analysis()$final_summary
+      ),
+      extra_plots = list(
+        "Boxplot" = analysis()$boxplot_obj,
+        "Estimated Means Interaction Plot" = analysis()$interaction_plot,
+        "Estimated Means - Main Plot" = analysis()$lsmean_main_plot,
+        "Estimated Means - Subplot" = analysis()$lsmean_sub_plot,
+        "Main Plot Means with LSD" = analysis()$lsd_main_plot,
+        "Subplot Means with LSD" = analysis()$lsd_sub_plot,
+        "Observed Interaction Means" = analysis()$split_interaction_mean_plot,
+        "Residuals vs Fitted" = residual_plot,
+        "Residual Q-Q Plot" = residual_qq_plot,
+        "Random Effects Q-Q Plot" = random_effect_qq_plot
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  ##########################################################
+  # DOWNLOAD CSV
+  ##########################################################
 
   output$download_csv <- downloadHandler(
-    filename = function() sprintf("split-plot-%s.csv", gsub("[^a-z]+", "-", tolower(input$csv_table))),
+
+    filename = function(){
+
+      paste0(
+        "split-plot-",
+        Sys.Date(),
+        ".csv"
+      )
+    },
+
+    content = function(file){
+
+      req(analysis())
+
+      table_map <- list(
+
+        "Full ANOVA" =
+          analysis()$full_anova,
+
+        "Additive ANOVA" =
+          analysis()$additive_anova,
+
+        "Split ANOVA" =
+          analysis()$split_anova,
+
+        "Main plot means" =
+          analysis()$split_main_means,
+
+        "Subplot means" =
+          analysis()$split_sub_means,
+
+        "Interaction means" =
+          analysis()$split_interaction_means,
+
+        "Split LSD/CV summary" =
+          analysis()$split_lsd_cv,
+
+        "EMMeans main plot" =
+          analysis()$emmeans_main,
+
+        "EMMeans subplot" =
+          analysis()$emmeans_sub,
+
+        "Tukey main plot" =
+          analysis()$tukey_main,
+
+        "Tukey subplot" =
+          analysis()$tukey_sub,
+
+        "CLD main plot" =
+          analysis()$cld_main,
+
+        "CLD subplot" =
+          analysis()$cld_sub,
+
+        "Diagnostics" =
+          analysis()$diagnostics
+      )
+
+      tbl <- table_map[[input$csv_table]]
+
+      validate(
+        need(
+          !is.null(tbl),
+          "Selected table unavailable"
+        )
+      )
+
+      write.csv(
+        safe_table(tbl),
+        file,
+        row.names = FALSE
+      )
+    }
+  )
+
+  output$download_split_pdf_report <- downloadHandler(
+    filename = function() "split-plot-report.pdf",
     content = function(file) {
       req(analysis())
-      table_map <- list(
-        "Full ANOVA" = analysis()$full_anova,
-        "Additive ANOVA" = analysis()$additive_anova,
-        "EMMeans main plot" = analysis()$emmeans_main,
-        "EMMeans subplot" = analysis()$emmeans_sub,
-        "Tukey main plot" = analysis()$tukey_main,
-        "Tukey subplot" = analysis()$tukey_sub,
-        "CLD main plot" = analysis()$cld_main,
-        "CLD subplot" = analysis()$cld_sub,
-        "Diagnostics" = analysis()$diagnostics
+
+      render_parameterized_report(
+        output_file = file,
+        output_format = "pdf_document",
+        params = report_params()
       )
-      write.csv(table_map[[input$csv_table]], file, row.names = FALSE)
     }
   )
 
@@ -776,15 +1397,25 @@ split_plot_server <- function(input, output, session) {
     filename = function() "split-plot-report.html",
     content = function(file) {
       req(analysis())
+
       save_html_report("Split Plot Report", list(
         list(title = "Dataset summary", subtitle = analysis()$report_note, table = head(analysis()$dataset, 20)),
-        list(title = "Assumptions and model choice", table = analysis()$assumptions),
-        list(title = "Full mixed-model ANOVA", table = analysis()$full_anova),
-        list(title = "Additive mixed-model ANOVA", table = analysis()$additive_anova),
-        list(title = "Estimated means for main plot", table = analysis()$emmeans_main),
-        list(title = "Estimated means for subplot", table = analysis()$emmeans_sub),
-        list(title = "Tukey comparisons for main plot", table = analysis()$tukey_main),
-        list(title = "Compact letter display for main plot", table = analysis()$cld_main),
+        list(title = "Assumptions and model choice", table = safe_table(analysis()$assumptions)),
+        list(title = "Full mixed-model ANOVA", table = safe_table(analysis()$full_anova)),
+        list(title = "Additive mixed-model ANOVA", table = safe_table(analysis()$additive_anova)),
+        list(title = "Clean split-plot ANOVA", table = safe_table(analysis()$split_anova)),
+        list(title = "Main plot means", table = safe_table(analysis()$split_main_means)),
+        list(title = "Subplot means", table = safe_table(analysis()$split_sub_means)),
+        list(title = "Interaction means", table = safe_table(analysis()$split_interaction_means)),
+        list(title = "LSD and CV summary", table = safe_table(analysis()$split_lsd_cv)),
+        list(title = "Estimated means for main plot", table = safe_table(analysis()$emmeans_main)),
+        list(title = "Estimated means for subplot", table = safe_table(analysis()$emmeans_sub)),
+        list(title = "Estimated means for interaction", table = safe_table(analysis()$emmeans_interaction)),
+        list(title = "Tukey comparisons for main plot", table = safe_table(analysis()$tukey_main)),
+        list(title = "Tukey comparisons for subplot", table = safe_table(analysis()$tukey_sub)),
+        list(title = "Compact letter display for main plot", table = safe_table(analysis()$cld_main)),
+        list(title = "Compact letter display for subplot", table = safe_table(analysis()$cld_sub)),
+        list(title = "Diagnostics", table = safe_table(analysis()$diagnostics)),
         list(title = "Final model summary", text = paste(analysis()$final_summary, collapse = "\n"))
       ), file)
     }

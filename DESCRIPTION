@@ -13,6 +13,7 @@ Imports:
     rmarkdown (>= 2.7),
     knitr (>= 1.31),
     htmltools,
+    DT,
     readxl,
     dplyr,
     tidyr,

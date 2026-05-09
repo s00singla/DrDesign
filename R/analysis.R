@@ -629,7 +629,171 @@ run_pooled_anova <- function(df, alpha = 0.05) {
   )
 }
 
-run_split_plot <- function(df, alpha = 0.05) {
+split_plot_analysis <- function(data, alpha = 0.05) {
+  required <- c("Rep", "MainPlot", "SubPlot", "Value")
+  validate(need(all(required %in% names(data)), "Columns Rep/MainPlot/SubPlot/Value are required."))
+
+  data <- data %>%
+    mutate(
+      Rep = factor(Rep),
+      MainPlot = factor(MainPlot),
+      SubPlot = factor(SubPlot),
+      Value = as.numeric(Value)
+    )
+  validate(need(!any(is.na(data$Value)), "Value must be numeric."))
+
+  model <- aov(Value ~ MainPlot * SubPlot + Error(Rep/MainPlot), data = data)
+  sp <- summary(model)
+
+  strata_names <- names(sp)
+  rep_stratum <- strata_names[grepl("Error:.*Rep", strata_names)][1]
+  main_stratum <- strata_names[grepl("MainPlot", strata_names)][1]
+  within_stratum <- strata_names[grepl("Within", strata_names)][1]
+
+  rep_tab <- sp[[rep_stratum]][[1]]
+  main_tab <- sp[[main_stratum]][[1]]
+  sub_tab <- sp[[within_stratum]][[1]]
+
+  main_effect <- gsub(" ", "", rownames(main_tab)[1])
+  subplot_effect <- gsub(" ", "", rownames(sub_tab)[1])
+  interaction_effect <- gsub(" ", "", rownames(sub_tab)[2])
+
+  anova_table <- data.frame(
+    Source = c(
+      "Replication",
+      main_effect,
+      "Error(a)",
+      subplot_effect,
+      interaction_effect,
+      "Error(b)"
+    ),
+    df = c(
+      rep_tab$Df[1],
+      main_tab$Df[1],
+      main_tab$Df[2],
+      sub_tab$Df[1],
+      sub_tab$Df[2],
+      sub_tab$Df[3]
+    ),
+    `Sum Sq` = c(
+      rep_tab$`Sum Sq`[1],
+      main_tab$`Sum Sq`[1],
+      main_tab$`Sum Sq`[2],
+      sub_tab$`Sum Sq`[1],
+      sub_tab$`Sum Sq`[2],
+      sub_tab$`Sum Sq`[3]
+    ),
+    `Mean Sq` = c(
+      rep_tab$`Mean Sq`[1],
+      main_tab$`Mean Sq`[1],
+      main_tab$`Mean Sq`[2],
+      sub_tab$`Mean Sq`[1],
+      sub_tab$`Mean Sq`[2],
+      sub_tab$`Mean Sq`[3]
+    ),
+    `F value` = c(
+      NA,
+      main_tab$`F value`[1],
+      NA,
+      sub_tab$`F value`[1],
+      sub_tab$`F value`[2],
+      NA
+    ),
+    `Pr(>F)` = c(
+      NA,
+      ifelse(main_tab$`Pr(>F)`[1] < 0.001, "<0.001", round(main_tab$`Pr(>F)`[1], 4)),
+      NA,
+      ifelse(sub_tab$`Pr(>F)`[1] < 0.001, "<0.001", round(sub_tab$`Pr(>F)`[1], 4)),
+      ifelse(sub_tab$`Pr(>F)`[2] < 0.001, "<0.001", round(sub_tab$`Pr(>F)`[2], 4)),
+      NA
+    ),
+    stringsAsFactors = FALSE
+  )
+  anova_table[, 2:5] <- round(anova_table[, 2:5], 3)
+
+  Ea <- main_tab$`Mean Sq`[2]
+  dfa <- main_tab$Df[2]
+  Eb <- sub_tab$`Mean Sq`[3]
+  dfb <- sub_tab$Df[3]
+
+  r <- nlevels(as.factor(data$Rep))
+  a <- nlevels(as.factor(data$MainPlot))
+  b <- nlevels(as.factor(data$SubPlot))
+  grand_mean <- mean(data$Value, na.rm = TRUE)
+
+  t_a <- qt(1 - alpha / 2, dfa)
+  SEm_main <- sqrt((2 * Ea) / (r * b))
+  LSD_main <- t_a * SEm_main
+
+  t_b <- qt(1 - alpha / 2, dfb)
+  SEm_sub <- sqrt((2 * Eb) / (r * a))
+  LSD_sub <- t_b * SEm_sub
+
+  SEm_interaction <- sqrt((2 * Eb) / r)
+  LSD_interaction <- t_b * SEm_interaction
+
+  tw <- (((b - 1) * Eb * t_b) + (Ea * t_a)) / (((b - 1) * Eb) + Ea)
+  SEm_type4 <- sqrt((2 * (((b - 1) * Eb) + Ea)) / (r * b))
+  LSD_type4 <- tw * SEm_type4
+
+  CV_main <- sqrt(Ea) / grand_mean * 100
+  CV_sub <- sqrt(Eb) / grand_mean * 100
+
+  main_means <- aggregate(data$Value, list(data$MainPlot), mean)
+  names(main_means) <- c("MainPlot", "Mean")
+
+  subplot_means <- aggregate(data$Value, list(data$SubPlot), mean)
+  names(subplot_means) <- c("SubPlot", "Mean")
+
+  interaction_means <- aggregate(data$Value, list(data$MainPlot, data$SubPlot), mean)
+  names(interaction_means) <- c("MainPlot", "SubPlot", "Mean")
+
+  list(
+    ANOVA = anova_table,
+    MainPlotMeans = main_means,
+    SubPlotMeans = subplot_means,
+    InteractionMeans = interaction_means,
+    LSD = list(
+      MainPlot = list(
+        Factor = "MainPlot",
+        ErrorMS = Ea,
+        DF = dfa,
+        SED = SEm_main,
+        LSD = LSD_main
+      ),
+      SubPlot = list(
+        Factor = "SubPlot",
+        ErrorMS = Eb,
+        DF = dfb,
+        SED = SEm_sub,
+        LSD = LSD_sub
+      ),
+      Interaction = list(
+        Comparison = "Subplot within MainPlot",
+        ErrorMS = Eb,
+        DF = dfb,
+        SED = SEm_interaction,
+        LSD = LSD_interaction
+      ),
+      Interaction2 = list(
+        Comparison = "Two main-plot means at same/different subplot levels",
+        ErrorA = Ea,
+        ErrorB = Eb,
+        DFa = dfa,
+        DFb = dfb,
+        Weighted_t_value = tw,
+        SED = SEm_type4,
+        LSD = LSD_type4
+      )
+    ),
+    CV = list(
+      MainPlotCV = CV_main,
+      SubPlotCV = CV_sub
+    )
+  )
+}
+
+run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subplot_var = "SubPlot", response_var = "Value", alpha = 0.05) {
   needed_packages <- c("lme4", "lmerTest", "emmeans", "ggplot2", "multcomp", "multcompView")
   missing_packages <- needed_packages[!vapply(needed_packages, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
   validate(need(
@@ -651,6 +815,23 @@ run_split_plot <- function(df, alpha = 0.05) {
     }
   }
 
+  if (!identical(rep_var, "Rep") && !is.null(rep_var) && rep_var %in% names(df)) {
+    if (!("Rep" %in% names(df))) names(df)[names(df) == rep_var] <- "Rep"
+  }
+  if (!identical(mainplot_var, "MainPlot") && !is.null(mainplot_var) && mainplot_var %in% names(df)) {
+    if (!("MainPlot" %in% names(df))) names(df)[names(df) == mainplot_var] <- "MainPlot"
+  }
+  if (!identical(subplot_var, "SubPlot") && !is.null(subplot_var) && subplot_var %in% names(df)) {
+    if (!("SubPlot" %in% names(df))) names(df)[names(df) == subplot_var] <- "SubPlot"
+  }
+  if (!identical(response_var, "Value") && !is.null(response_var) && response_var %in% names(df)) {
+    if (!("Value" %in% names(df))) names(df)[names(df) == response_var] <- "Value"
+  }
+
+  if (is.null(df) || ncol(df) == 0) {
+    validate(need(FALSE, "Input dataset is empty or invalid."))
+  }
+
   required <- c("Rep", "MainPlot", "SubPlot", "Value")
   validate(need(all(required %in% names(df)), "Columns Rep/MainPlot/SubPlot/Value or W/A/B/Y are required."))
 
@@ -663,8 +844,10 @@ run_split_plot <- function(df, alpha = 0.05) {
     )
   validate(need(!any(is.na(df$Value)), "Value must be numeric."))
 
-  full_model <- lmerTest::lmer(Value ~ MainPlot * SubPlot + (1 | Rep), data = df)
-  additive_model <- lmerTest::lmer(Value ~ MainPlot + SubPlot + (1 | Rep), data = df)
+  full_model <- lmerTest::lmer(Value ~ MainPlot * SubPlot + (1 | Rep/MainPlot), data = df)
+  additive_model <- lmerTest::lmer(Value ~ MainPlot + SubPlot + (1 | Rep/MainPlot), data = df)
+
+  split_results <- split_plot_analysis(df, alpha = alpha)
 
   full_anova <- as.data.frame(anova(full_model))
   full_anova$Effect <- rownames(full_anova)
@@ -715,6 +898,39 @@ run_split_plot <- function(df, alpha = 0.05) {
     ggplot2::theme_minimal() +
     ggplot2::labs(title = "Interaction Plot of Estimated Means", x = "Main Plot", y = "Estimated mean", color = "Subplot")
 
+  lsd_main_plot <- ggplot2::ggplot(split_results$MainPlotMeans, ggplot2::aes(x = MainPlot, y = Mean)) +
+    ggplot2::geom_col(fill = "#8bb174") +
+    ggplot2::geom_errorbar(ggplot2::aes(ymin = Mean - split_results$LSD$MainPlot$LSD / 2, ymax = Mean + split_results$LSD$MainPlot$LSD / 2), width = 0.2, color = "#335633") +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Main Plot Means with LSD", x = "Main Plot", y = "Mean")
+
+  lsd_sub_plot <- ggplot2::ggplot(split_results$SubPlotMeans, ggplot2::aes(x = SubPlot, y = Mean)) +
+    ggplot2::geom_col(fill = "#c1974f") +
+    ggplot2::geom_errorbar(ggplot2::aes(ymin = Mean - split_results$LSD$SubPlot$LSD / 2, ymax = Mean + split_results$LSD$SubPlot$LSD / 2), width = 0.2, color = "#5f4623") +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Subplot Means with LSD", x = "Subplot", y = "Mean")
+
+  split_interaction_mean_plot <- ggplot2::ggplot(split_results$InteractionMeans, ggplot2::aes(x = MainPlot, y = Mean, color = SubPlot, group = SubPlot)) +
+    ggplot2::geom_line(size = 0.8) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Interaction Plot of Observed Means", x = "Main Plot", y = "Mean", color = "Subplot")
+
+  split_lsd_cv_table <- metrics_table(list(
+    "Main plot LSD" = split_results$LSD$MainPlot$LSD,
+    "Main plot SED" = split_results$LSD$MainPlot$SED,
+    "Main plot Error MS" = split_results$LSD$MainPlot$ErrorMS,
+    "Main plot DF" = split_results$LSD$MainPlot$DF,
+    "Subplot LSD" = split_results$LSD$SubPlot$LSD,
+    "Subplot SED" = split_results$LSD$SubPlot$SED,
+    "Subplot Error MS" = split_results$LSD$SubPlot$ErrorMS,
+    "Subplot DF" = split_results$LSD$SubPlot$DF,
+    "Interaction LSD" = split_results$LSD$Interaction$LSD,
+    "Interaction SED" = split_results$LSD$Interaction$SED,
+    "Main plot CV (%)" = split_results$CV$MainPlotCV,
+    "Subplot CV (%)" = split_results$CV$SubPlotCV
+  ))
+
   residuals_final <- residuals(final_model)
   fitted_final <- fitted(final_model)
   random_effects <- as.data.frame(lme4::ranef(final_model)$Rep)
@@ -752,6 +968,14 @@ run_split_plot <- function(df, alpha = 0.05) {
     lsmean_main_plot = lsmean_main_plot,
     lsmean_sub_plot = lsmean_sub_plot,
     interaction_plot = interaction_plot,
+    split_anova = split_results$ANOVA,
+    split_main_means = split_results$MainPlotMeans,
+    split_sub_means = split_results$SubPlotMeans,
+    split_interaction_means = split_results$InteractionMeans,
+    split_lsd_cv = split_lsd_cv_table,
+    lsd_main_plot = lsd_main_plot,
+    lsd_sub_plot = lsd_sub_plot,
+    split_interaction_mean_plot = split_interaction_mean_plot,
     residuals_final = residuals_final,
     fitted_final = fitted_final,
     random_effects = random_effects,

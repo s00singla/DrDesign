@@ -21,6 +21,9 @@ params:
   inference_text: NULL
   report_note: NULL
   plot_errorbar: NULL
+  extra_tables: NULL
+  extra_text_sections: NULL
+  extra_plots: NULL
   generated_at: NULL
 ---
 
@@ -45,6 +48,16 @@ render_table <- function(x, caption, fallback = "No data available for this sect
     ))
   } else {
     cat(fallback)
+  }
+}
+
+render_text_block <- function(x, fallback = "No text was supplied for this section.") {
+  if (is.null(x) || length(x) == 0) {
+    cat(fallback)
+  } else {
+    cat("\n\n```text\n")
+    cat(paste(as.character(x), collapse = "\n"))
+    cat("\n```\n")
   }
 }
 ```
@@ -145,5 +158,37 @@ if (inherits(params$plot_errorbar, "ggplot")) {
   print(params$plot_errorbar)
 } else {
   cat("No ggplot object was supplied from the app.")
+}
+```
+
+```{r extra-tables, results='asis'}
+if (is.list(params$extra_tables) && length(params$extra_tables) > 0) {
+  for (section_name in names(params$extra_tables)) {
+    cat("\n\n# ", section_name, "\n\n", sep = "")
+    render_table(params$extra_tables[[section_name]], section_name)
+  }
+}
+```
+
+```{r extra-text-sections, results='asis'}
+if (is.list(params$extra_text_sections) && length(params$extra_text_sections) > 0) {
+  for (section_name in names(params$extra_text_sections)) {
+    cat("\n\n# ", section_name, "\n\n", sep = "")
+    render_text_block(params$extra_text_sections[[section_name]])
+  }
+}
+```
+
+```{r extra-plots, fig.width=8, fig.height=5, results='asis'}
+if (is.list(params$extra_plots) && length(params$extra_plots) > 0) {
+  for (plot_name in names(params$extra_plots)) {
+    cat("\n\n# ", plot_name, "\n\n", sep = "")
+    plot_obj <- params$extra_plots[[plot_name]]
+    if (inherits(plot_obj, "ggplot")) {
+      print(plot_obj)
+    } else {
+      cat("No ggplot object was supplied for this section.")
+    }
+  }
 }
 ```

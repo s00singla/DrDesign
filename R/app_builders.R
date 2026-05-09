@@ -7,7 +7,7 @@ portal_ui <- function(catalog = app_catalog) {
       column(6, div(class = "station-card", h3("Support"), p("Version 1.0 deployment scaffold"), p("Recommended host: single cloud VM with Docker Compose."), p("Update this section with station support contacts before production."), p("Modules are linked below.")))
     ),
     fluidRow(lapply(catalog[-1], function(app) {
-      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
+      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, factorial CRD/RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
     }))
   )
 }
@@ -20,11 +20,15 @@ design_analyzer_ui <- function(nav_catalog = app_catalog) {
     "Generate randomized layout plans for common agricultural experiments and export the allocation table.",
     "design-analyzer",
     tagList(
-      selectInput("design_type", "Design type", choices = c("CRD", "RBD", "Split Plot", "Augmented RCBD", "Strip Plot")),
+      selectInput("design_type", "Design type", choices = c("CRD", "RBD", "Factorial CRD", "Factorial RBD", "Split Plot", "Augmented RCBD", "Strip Plot")),
       conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD'",
         numericInput("trt", "Number of treatments", value = 4, min = 2)
       ),
-      conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD' || input.design_type == 'Split Plot' || input.design_type == 'Augmented RCBD' || input.design_type == 'Strip Plot'",
+      conditionalPanel("input.design_type == 'Factorial CRD' || input.design_type == 'Factorial RBD'",
+        numericInput("factor_a_trt", "Factor A levels", value = 2, min = 2),
+        numericInput("factor_b_trt", "Factor B levels", value = 2, min = 2)
+      ),
+      conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD' || input.design_type == 'Factorial CRD' || input.design_type == 'Factorial RBD' || input.design_type == 'Split Plot' || input.design_type == 'Augmented RCBD' || input.design_type == 'Strip Plot'",
         numericInput("rep", "Replications / blocks", value = 3, min = 2)
       ),
       conditionalPanel("input.design_type == 'Split Plot' || input.design_type == 'Strip Plot'",
@@ -36,7 +40,7 @@ design_analyzer_ui <- function(nav_catalog = app_catalog) {
         numericInput("test_trt", "Number of test treatments", value = 6, min = 2)
       ),
       numericInput("seed", "Randomization seed", value = 1, min = 1),
-      build_help_box("What this module does", c("Creates a randomized fieldbook similar to the grapesAgri layout workflow.", "Use the seed to reproduce a layout exactly.", "Download the allocation table for field teams or reporting.")),
+      build_help_box("What this module does", c("Creates a randomized fieldbook similar to the grapesAgri layout workflow.", "Supports CRD, RBD, two-factor factorial CRD/RBD, split-plot, strip-plot, and augmented RCBD layouts.", "Use the seed to reproduce a layout exactly.", "Download the allocation table for field teams or reporting.")),
       actionButton("generate_layout", "Generate layout", class = "btn-primary"),
       tags$hr(),
       downloadButton("download_layout_csv", "Download allocation CSV"),
@@ -64,6 +68,8 @@ design_analyzer_server <- function(input, output, session) {
         rep = input$rep,
         main_trt = input$main_trt,
         sub_trt = input$sub_trt,
+        factor_a_trt = input$factor_a_trt,
+        factor_b_trt = input$factor_b_trt,
         checks = input$checks,
         test_trt = input$test_trt
       ),
@@ -81,17 +87,17 @@ design_analyzer_server <- function(input, output, session) {
     req(layout_plan())
     plan <- layout_plan()
 
-    if (identical(plan$design, "CRD")) {
+    if (identical(plan$design, "CRD") || identical(plan$design, "Factorial CRD")) {
       desplot::desplot(
         form = row ~ col,
         data = plan$plot_data,
         text = label,
         out1 = row,
         out2 = col,
-        main = "CRD Layout",
+        main = sprintf("%s Layout", plan$design),
         cex = 1.1
       )
-    } else if (identical(plan$design, "RBD")) {
+    } else if (identical(plan$design, "RBD") || identical(plan$design, "Factorial RBD")) {
       desplot::desplot(
         form = block_num ~ plot_num,
         data = plan$plot_data,
@@ -99,7 +105,7 @@ design_analyzer_server <- function(input, output, session) {
         out1 = block_num,
         out2 = plot_num,
         out2.gpar = list(col = "#547d43"),
-        main = "RBD Layout",
+        main = sprintf("%s Layout", plan$design),
         cex = 1.1
       )
     } else if (identical(plan$design, "Augmented RCBD")) {

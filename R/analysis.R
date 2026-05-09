@@ -503,9 +503,24 @@ run_design_layout <- function(
     rep = NULL,
     main_trt = NULL,
     sub_trt = NULL,
+    factor_a_trt = NULL,
+    factor_b_trt = NULL,
     checks = NULL,
     test_trt = NULL) {
   kind <- "Super-Duper"
+
+  parse_factorial_treatment <- function(treatment) {
+    parts <- strcapture(
+      "^A([0-9]+)B([0-9]+)$",
+      as.character(treatment),
+      proto = list(A = integer(), B = integer())
+    )
+    data.frame(
+      FactorA = sprintf("A%s", parts$A),
+      FactorB = sprintf("B%s", parts$B),
+      stringsAsFactors = FALSE
+    )
+  }
 
   if (identical(design, "CRD")) {
     validate(need(!is.null(trt) && trt >= 2, "CRD needs at least two treatments."))
@@ -533,6 +548,42 @@ run_design_layout <- function(
       design = design,
       summary = data.frame(Treatments = trt, Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
       fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "Factorial CRD")) {
+    validate(need(!is.null(factor_a_trt) && factor_a_trt >= 2, "Factorial CRD needs at least two Factor A levels."))
+    validate(need(!is.null(factor_b_trt) && factor_b_trt >= 2, "Factorial CRD needs at least two Factor B levels."))
+    validate(need(!is.null(rep) && rep >= 2, "Factorial CRD needs at least two replications."))
+    factor_a_labels <- sprintf("A%s", seq_len(factor_a_trt))
+    factor_b_labels <- sprintf("B%s", seq_len(factor_b_trt))
+    trt_labels <- as.vector(outer(factor_a_labels, factor_b_labels, paste0))
+    fieldbook <- agricolae::design.crd(trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$r), , drop = FALSE]
+    fieldbook$ExperimentalUnit <- seq_len(nrow(fieldbook))
+    factors <- parse_factorial_treatment(fieldbook$trtname)
+    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = as.character(trtname))
+    list(
+      design = design,
+      summary = data.frame(FactorALevels = factor_a_trt, FactorBLevels = factor_b_trt, Treatments = length(trt_labels), Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "Factorial RBD")) {
+    validate(need(!is.null(factor_a_trt) && factor_a_trt >= 2, "Factorial RBD needs at least two Factor A levels."))
+    validate(need(!is.null(factor_b_trt) && factor_b_trt >= 2, "Factorial RBD needs at least two Factor B levels."))
+    validate(need(!is.null(rep) && rep >= 2, "Factorial RBD needs at least two blocks."))
+    factor_a_labels <- sprintf("A%s", seq_len(factor_a_trt))
+    factor_b_labels <- sprintf("B%s", seq_len(factor_b_trt))
+    trt_labels <- as.vector(outer(factor_a_labels, factor_b_labels, paste0))
+    fieldbook <- agricolae::design.rcbd(trt = trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$block), , drop = FALSE]
+    fieldbook$Plot <- ave(seq_len(nrow(fieldbook)), fieldbook$block, FUN = seq_along)
+    factors <- parse_factorial_treatment(fieldbook$trtname)
+    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = as.character(trtname))
+    list(
+      design = design,
+      summary = data.frame(FactorALevels = factor_a_trt, FactorBLevels = factor_b_trt, Treatments = length(trt_labels), Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else if (identical(design, "Augmented RCBD")) {

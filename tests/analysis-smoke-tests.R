@@ -40,4 +40,14 @@ stopifnot(nrow(cor_result$correlation_p) >= 2)
 layout_result <- run_design_layout("RBD", seed = 7, trt = 4, rep = 3)
 stopifnot(nrow(layout_result$fieldbook) == 12)
 
+factorial_crd_layout <- run_design_layout("Factorial CRD", seed = 7, factor_a_trt = 2, factor_b_trt = 3, rep = 2)
+stopifnot(nrow(factorial_crd_layout$fieldbook) == 12)
+stopifnot(all(c("FactorA", "FactorB", "Treatment") %in% names(factorial_crd_layout$fieldbook)))
+stopifnot(length(unique(factorial_crd_layout$fieldbook$Treatment)) == 6)
+
+factorial_rbd_layout <- run_design_layout("Factorial RBD", seed = 7, factor_a_trt = 2, factor_b_trt = 3, rep = 3)
+stopifnot(nrow(factorial_rbd_layout$fieldbook) == 18)
+stopifnot(all(c("FactorA", "FactorB", "Treatment") %in% names(factorial_rbd_layout$fieldbook)))
+stopifnot(length(unique(factorial_rbd_layout$fieldbook$Treatment)) == 6)
+
 cat("All smoke tests passed.\n")

@@ -610,7 +610,15 @@ run_design_layout <- function(
     sub_labels <- sprintf("B%s", seq_len(sub_trt))
     fieldbook <- agricolae::design.split(main_labels, sub_labels, r = rep, serie = 0, seed = seed, kinds = kind, randomization = TRUE)$book
     fieldbook <- fieldbook[order(fieldbook$block, fieldbook$plots, fieldbook$splots), , drop = FALSE]
-    plot_data <- transform(fieldbook, rep_num = as.numeric(block), main_num = as.numeric(plots), sub_num = as.numeric(splots), label = sprintf("%s/%s", as.character(main), as.character(sub)))
+    plot_data <- transform(
+      fieldbook,
+      rep_num = as.numeric(block),
+      main_num = as.numeric(plots),
+      sub_num = as.numeric(splots),
+      main_treatment = as.character(main),
+      sub_treatment = as.character(sub),
+      label = sprintf("%s/%s", as.character(main), as.character(sub))
+    )
     list(
       design = design,
       summary = data.frame(MainPlotTreatments = main_trt, SubPlotTreatments = sub_trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),

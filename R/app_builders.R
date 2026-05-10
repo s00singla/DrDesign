@@ -120,10 +120,10 @@ design_analyzer_server <- function(input, output, session) {
       )
     } else if (identical(plan$design, "Split Plot")) {
       desplot::desplot(
-        form = rep_num ~ main_num + sub_num,
+        form = main_treatment ~ main_num + sub_num,
         data = plan$plot_data,
-        text = label,
-        out1 = rep_num,
+        text = sub_treatment,
+        out1 = main_num,
         out2 = sub_num,
         main = "Split-Plot Layout",
         cex = 1

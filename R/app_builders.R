@@ -703,6 +703,7 @@ split_plot_ui <- function(nav_catalog = app_catalog) {
       selectInput("csv_table", "CSV table to download", choices = c("Full ANOVA", "Additive ANOVA", "Split ANOVA", "Main plot means", "Subplot means", "Interaction means", "Split LSD/CV summary", "EMMeans main plot", "EMMeans subplot", "Tukey main plot", "Tukey subplot", "CLD main plot", "CLD subplot", "Diagnostics")),
       downloadButton("download_csv", "Download CSV"),
       downloadButton("download_split_pdf_report", "Download PDF report"),
+      downloadButton("download_split_word_report", "Download Word report"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -1394,6 +1395,19 @@ split_plot_server <- function(input, output, session) {
       render_parameterized_report(
         output_file = file,
         output_format = "pdf_document",
+        params = report_params()
+      )
+    }
+  )
+
+  output$download_split_word_report <- downloadHandler(
+    filename = function() "split-plot-report.docx",
+    content = function(file) {
+      req(analysis())
+
+      render_parameterized_report(
+        output_file = file,
+        output_format = "word_document",
         params = report_params()
       )
     }

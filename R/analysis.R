@@ -975,20 +975,54 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
     ggplot2::theme_minimal() +
     ggplot2::labs(title = "Interaction Plot of Observed Means", x = "Main Plot", y = "Mean", color = "Subplot")
 
-  split_lsd_cv_table <- metrics_table(list(
-    "Main plot LSD" = split_results$LSD$MainPlot$LSD,
-    "Main plot SED" = split_results$LSD$MainPlot$SED,
-    "Main plot Error MS" = split_results$LSD$MainPlot$ErrorMS,
-    "Main plot DF" = split_results$LSD$MainPlot$DF,
-    "Subplot LSD" = split_results$LSD$SubPlot$LSD,
-    "Subplot SED" = split_results$LSD$SubPlot$SED,
-    "Subplot Error MS" = split_results$LSD$SubPlot$ErrorMS,
-    "Subplot DF" = split_results$LSD$SubPlot$DF,
-    "Interaction LSD" = split_results$LSD$Interaction$LSD,
-    "Interaction SED" = split_results$LSD$Interaction$SED,
-    "Main plot CV (%)" = split_results$CV$MainPlotCV,
-    "Subplot CV (%)" = split_results$CV$SubPlotCV
-  ))
+  split_lsd_cv_table <- data.frame(
+    Comparison = c(
+      "Main plot",
+      "Subplot",
+      "Subplot within main plot",
+      "Main-plot means at same/different subplot levels"
+    ),
+    `Error MS` = c(
+      round(split_results$LSD$MainPlot$ErrorMS, 4),
+      round(split_results$LSD$SubPlot$ErrorMS, 4),
+      round(split_results$LSD$Interaction$ErrorMS, 4),
+      sprintf(
+        "Ea: %s; Eb: %s",
+        round(split_results$LSD$Interaction2$ErrorA, 4),
+        round(split_results$LSD$Interaction2$ErrorB, 4)
+      )
+    ),
+    DF = c(
+      split_results$LSD$MainPlot$DF,
+      split_results$LSD$SubPlot$DF,
+      split_results$LSD$Interaction$DF,
+      sprintf(
+        "DFa: %s; DFb: %s",
+        split_results$LSD$Interaction2$DFa,
+        split_results$LSD$Interaction2$DFb
+      )
+    ),
+    `SE(m)` = round(c(
+      split_results$LSD$MainPlot$SED,
+      split_results$LSD$SubPlot$SED,
+      split_results$LSD$Interaction$SED,
+      split_results$LSD$Interaction2$SED
+    ), 4),
+    CD = round(c(
+      split_results$LSD$MainPlot$LSD,
+      split_results$LSD$SubPlot$LSD,
+      split_results$LSD$Interaction$LSD,
+      split_results$LSD$Interaction2$LSD
+    ), 4),
+    `CV (%)` = c(
+      round(split_results$CV$MainPlotCV, 4),
+      round(split_results$CV$SubPlotCV, 4),
+      NA,
+      NA
+    ),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
 
   residuals_final <- residuals(final_model)
   fitted_final <- fitted(final_model)

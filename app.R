@@ -1,5 +1,6 @@
 source("R/shared.R", local = TRUE)
 source("R/analysis.R", local = TRUE)
+source("R/met_analysis.R", local = TRUE)
 source("R/app_builders.R", local = TRUE)
 
 root_router_ui <- function(request) {
@@ -7,33 +8,35 @@ root_router_ui <- function(request) {
 
   switch(
     target %||% "portal",
-    "design-analyzer" = design_analyzer_ui(local_app_catalog),
-    "crd-rbd" = crd_rbd_ui(local_app_catalog),
-    "factorial-design" = factorial_design_ui(local_app_catalog),
-    "pooled-anova" = pooled_anova_ui(local_app_catalog),
-    "split-plot" = split_plot_ui(local_app_catalog),
+    "design-analyzer"      = design_analyzer_ui(local_app_catalog),
+    "crd-rbd"              = crd_rbd_ui(local_app_catalog),
+    "factorial-design"     = factorial_design_ui(local_app_catalog),
+    "pooled-anova"         = pooled_anova_ui(local_app_catalog),
+    "split-plot"           = split_plot_ui(local_app_catalog),
     "correlation-regression" = correlation_regression_ui(local_app_catalog),
     "descriptive-statistics" = descriptive_statistics_ui(local_app_catalog),
-    "compare-means" = compare_means_ui(local_app_catalog),
+    "compare-means"        = compare_means_ui(local_app_catalog),
+    "met-stability"        = met_stability_ui(local_app_catalog),
     portal_ui(local_app_catalog)
   )
 }
 
 root_router_server <- function(input, output, session) {
   session$onFlushed(function() {
-    target <- parseQueryString(isolate(session$clientData$url_search))
+    target   <- parseQueryString(isolate(session$clientData$url_search))
     app_name <- target[["app"]] %||% "portal"
 
     switch(
       app_name,
-      "design-analyzer" = design_analyzer_server(input, output, session),
-      "crd-rbd" = crd_rbd_server(input, output, session),
-      "factorial-design" = factorial_design_server(input, output, session),
-      "pooled-anova" = pooled_anova_server(input, output, session),
-      "split-plot" = split_plot_server(input, output, session),
+      "design-analyzer"      = design_analyzer_server(input, output, session),
+      "crd-rbd"              = crd_rbd_server(input, output, session),
+      "factorial-design"     = factorial_design_server(input, output, session),
+      "pooled-anova"         = pooled_anova_server(input, output, session),
+      "split-plot"           = split_plot_server(input, output, session),
       "correlation-regression" = correlation_regression_server(input, output, session),
       "descriptive-statistics" = descriptive_statistics_server(input, output, session),
-      "compare-means" = compare_means_server(input, output, session),
+      "compare-means"        = compare_means_server(input, output, session),
+      "met-stability"        = met_stability_server(input, output, session),
       portal_server(input, output, session)
     )
   }, once = TRUE)

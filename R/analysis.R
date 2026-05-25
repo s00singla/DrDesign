@@ -23,6 +23,26 @@ pooled_example <- "Season\tRep\tTreatment\tValue\nKharif-2024\tR1\tT1\t25.4\nKha
 split_plot_example <- "Rep\tMainPlot\tSubPlot\tValue\nR1\tI1\tV1\t28.1\nR1\tI1\tV2\t31.5\nR1\tI2\tV1\t30.2\nR1\tI2\tV2\t34.6\nR2\tI1\tV1\t27.4\nR2\tI1\tV2\t30.8\nR2\tI2\tV1\t29.9\nR2\tI2\tV2\t33.8"
 correlation_example <- "Yield\tRainfall\tNitrogen\tPlantHeight\n42.1\t740\t90\t112\n45.0\t780\t100\t116\n39.8\t690\t85\t109\n50.3\t820\t110\t122\n47.4\t800\t105\t118"
 
+met_example <- paste(
+  "GEN\tENV\tREP\tYield",
+  "G01\tE1_Loc1\tR1\t5.20", "G01\tE1_Loc1\tR2\t5.40", "G01\tE1_Loc1\tR3\t5.10",
+  "G01\tE1_Loc2\tR1\t4.80", "G01\tE1_Loc2\tR2\t4.60", "G01\tE1_Loc2\tR3\t5.00",
+  "G01\tE2_Loc1\tR1\t5.50", "G01\tE2_Loc1\tR2\t5.30", "G01\tE2_Loc1\tR3\t5.60",
+  "G02\tE1_Loc1\tR1\t4.80", "G02\tE1_Loc1\tR2\t5.00", "G02\tE1_Loc1\tR3\t4.90",
+  "G02\tE1_Loc2\tR1\t3.20", "G02\tE1_Loc2\tR2\t3.40", "G02\tE1_Loc2\tR3\t3.10",
+  "G02\tE2_Loc1\tR1\t6.20", "G02\tE2_Loc1\tR2\t6.50", "G02\tE2_Loc1\tR3\t6.10",
+  "G03\tE1_Loc1\tR1\t4.50", "G03\tE1_Loc1\tR2\t4.30", "G03\tE1_Loc1\tR3\t4.60",
+  "G03\tE1_Loc2\tR1\t4.40", "G03\tE1_Loc2\tR2\t4.20", "G03\tE1_Loc2\tR3\t4.50",
+  "G03\tE2_Loc1\tR1\t4.30", "G03\tE2_Loc1\tR2\t4.50", "G03\tE2_Loc1\tR3\t4.10",
+  "G04\tE1_Loc1\tR1\t3.80", "G04\tE1_Loc1\tR2\t4.00", "G04\tE1_Loc1\tR3\t3.90",
+  "G04\tE1_Loc2\tR1\t3.70", "G04\tE1_Loc2\tR2\t3.90", "G04\tE1_Loc2\tR3\t3.80",
+  "G04\tE2_Loc1\tR1\t3.90", "G04\tE2_Loc1\tR2\t4.10", "G04\tE2_Loc1\tR3\t3.80",
+  "G05\tE1_Loc1\tR1\t6.20", "G05\tE1_Loc1\tR2\t6.00", "G05\tE1_Loc1\tR3\t6.40",
+  "G05\tE1_Loc2\tR1\t3.10", "G05\tE1_Loc2\tR2\t3.30", "G05\tE1_Loc2\tR3\t2.90",
+  "G05\tE2_Loc1\tR1\t5.80", "G05\tE2_Loc1\tR2\t6.00", "G05\tE2_Loc1\tR3\t5.60",
+  sep = "\n"
+)
+
 correlation_p_matrix <- function(df, conf.level = 0.95) {
   mat <- as.matrix(df)
   n <- ncol(mat)

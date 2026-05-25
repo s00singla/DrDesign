@@ -15,7 +15,8 @@ app_catalog <- list(
   list(key = "split-plot", label = "Split Plot", path = "/split-plot/"),
   list(key = "correlation-regression", label = "Correlation & Regression", path = "/correlation-regression/"),
   list(key = "descriptive-statistics", label = "Descriptive Statistics", path = "/descriptive-statistics/"),
-  list(key = "compare-means", label = "Compare Means", path = "/compare-means/")
+  list(key = "compare-means", label = "Compare Means", path = "/compare-means/"),
+  list(key = "met-stability", label = "MET Stability", path = "/met-stability/")
 )
 
 local_app_catalog <- list(
@@ -27,7 +28,8 @@ local_app_catalog <- list(
   list(key = "split-plot", label = "Split Plot", path = "?app=split-plot"),
   list(key = "correlation-regression", label = "Correlation & Regression", path = "?app=correlation-regression"),
   list(key = "descriptive-statistics", label = "Descriptive Statistics", path = "?app=descriptive-statistics"),
-  list(key = "compare-means", label = "Compare Means", path = "?app=compare-means")
+  list(key = "compare-means", label = "Compare Means", path = "?app=compare-means"),
+  list(key = "met-stability", label = "MET Stability", path = "?app=met-stability")
 )
 
 research_station_styles <- HTML("

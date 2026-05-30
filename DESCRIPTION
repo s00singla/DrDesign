@@ -28,7 +28,8 @@ Imports:
     car,
     lme4,
     lmerTest,
-    metan
+    metan,
+    writexl
 Suggests:
     shinytest,
     testthat

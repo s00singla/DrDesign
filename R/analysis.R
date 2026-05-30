@@ -23,6 +23,26 @@ pooled_example <- "Season\tRep\tTreatment\tValue\nKharif-2024\tR1\tT1\t25.4\nKha
 split_plot_example <- "Rep\tMainPlot\tSubPlot\tValue\nR1\tI1\tV1\t28.1\nR1\tI1\tV2\t31.5\nR1\tI2\tV1\t30.2\nR1\tI2\tV2\t34.6\nR2\tI1\tV1\t27.4\nR2\tI1\tV2\t30.8\nR2\tI2\tV1\t29.9\nR2\tI2\tV2\t33.8"
 correlation_example <- "Yield\tRainfall\tNitrogen\tPlantHeight\n42.1\t740\t90\t112\n45.0\t780\t100\t116\n39.8\t690\t85\t109\n50.3\t820\t110\t122\n47.4\t800\t105\t118"
 
+met_example <- paste(
+  "GEN\tENV\tREP\tYield",
+  "G01\tE1_Loc1\tR1\t5.20", "G01\tE1_Loc1\tR2\t5.40", "G01\tE1_Loc1\tR3\t5.10",
+  "G01\tE1_Loc2\tR1\t4.80", "G01\tE1_Loc2\tR2\t4.60", "G01\tE1_Loc2\tR3\t5.00",
+  "G01\tE2_Loc1\tR1\t5.50", "G01\tE2_Loc1\tR2\t5.30", "G01\tE2_Loc1\tR3\t5.60",
+  "G02\tE1_Loc1\tR1\t4.80", "G02\tE1_Loc1\tR2\t5.00", "G02\tE1_Loc1\tR3\t4.90",
+  "G02\tE1_Loc2\tR1\t3.20", "G02\tE1_Loc2\tR2\t3.40", "G02\tE1_Loc2\tR3\t3.10",
+  "G02\tE2_Loc1\tR1\t6.20", "G02\tE2_Loc1\tR2\t6.50", "G02\tE2_Loc1\tR3\t6.10",
+  "G03\tE1_Loc1\tR1\t4.50", "G03\tE1_Loc1\tR2\t4.30", "G03\tE1_Loc1\tR3\t4.60",
+  "G03\tE1_Loc2\tR1\t4.40", "G03\tE1_Loc2\tR2\t4.20", "G03\tE1_Loc2\tR3\t4.50",
+  "G03\tE2_Loc1\tR1\t4.30", "G03\tE2_Loc1\tR2\t4.50", "G03\tE2_Loc1\tR3\t4.10",
+  "G04\tE1_Loc1\tR1\t3.80", "G04\tE1_Loc1\tR2\t4.00", "G04\tE1_Loc1\tR3\t3.90",
+  "G04\tE1_Loc2\tR1\t3.70", "G04\tE1_Loc2\tR2\t3.90", "G04\tE1_Loc2\tR3\t3.80",
+  "G04\tE2_Loc1\tR1\t3.90", "G04\tE2_Loc1\tR2\t4.10", "G04\tE2_Loc1\tR3\t3.80",
+  "G05\tE1_Loc1\tR1\t6.20", "G05\tE1_Loc1\tR2\t6.00", "G05\tE1_Loc1\tR3\t6.40",
+  "G05\tE1_Loc2\tR1\t3.10", "G05\tE1_Loc2\tR2\t3.30", "G05\tE1_Loc2\tR3\t2.90",
+  "G05\tE2_Loc1\tR1\t5.80", "G05\tE2_Loc1\tR2\t6.00", "G05\tE2_Loc1\tR3\t5.60",
+  sep = "\n"
+)
+
 correlation_p_matrix <- function(df, conf.level = 0.95) {
   mat <- as.matrix(df)
   n <- ncol(mat)
@@ -503,9 +523,24 @@ run_design_layout <- function(
     rep = NULL,
     main_trt = NULL,
     sub_trt = NULL,
+    factor_a_trt = NULL,
+    factor_b_trt = NULL,
     checks = NULL,
     test_trt = NULL) {
   kind <- "Super-Duper"
+
+  parse_factorial_treatment <- function(treatment) {
+    parts <- strcapture(
+      "^A([0-9]+)B([0-9]+)$",
+      as.character(treatment),
+      proto = list(A = integer(), B = integer())
+    )
+    data.frame(
+      FactorA = sprintf("A%s", parts$A),
+      FactorB = sprintf("B%s", parts$B),
+      stringsAsFactors = FALSE
+    )
+  }
 
   if (identical(design, "CRD")) {
     validate(need(!is.null(trt) && trt >= 2, "CRD needs at least two treatments."))
@@ -535,6 +570,42 @@ run_design_layout <- function(
       fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
       plot_data = plot_data
     )
+  } else if (identical(design, "Factorial CRD")) {
+    validate(need(!is.null(factor_a_trt) && factor_a_trt >= 2, "Factorial CRD needs at least two Factor A levels."))
+    validate(need(!is.null(factor_b_trt) && factor_b_trt >= 2, "Factorial CRD needs at least two Factor B levels."))
+    validate(need(!is.null(rep) && rep >= 2, "Factorial CRD needs at least two replications."))
+    factor_a_labels <- sprintf("A%s", seq_len(factor_a_trt))
+    factor_b_labels <- sprintf("B%s", seq_len(factor_b_trt))
+    trt_labels <- as.vector(outer(factor_a_labels, factor_b_labels, paste0))
+    fieldbook <- agricolae::design.crd(trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$r), , drop = FALSE]
+    fieldbook$ExperimentalUnit <- seq_len(nrow(fieldbook))
+    factors <- parse_factorial_treatment(fieldbook$trtname)
+    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = as.character(trtname))
+    list(
+      design = design,
+      summary = data.frame(FactorALevels = factor_a_trt, FactorBLevels = factor_b_trt, Treatments = length(trt_labels), Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
+  } else if (identical(design, "Factorial RBD")) {
+    validate(need(!is.null(factor_a_trt) && factor_a_trt >= 2, "Factorial RBD needs at least two Factor A levels."))
+    validate(need(!is.null(factor_b_trt) && factor_b_trt >= 2, "Factorial RBD needs at least two Factor B levels."))
+    validate(need(!is.null(rep) && rep >= 2, "Factorial RBD needs at least two blocks."))
+    factor_a_labels <- sprintf("A%s", seq_len(factor_a_trt))
+    factor_b_labels <- sprintf("B%s", seq_len(factor_b_trt))
+    trt_labels <- as.vector(outer(factor_a_labels, factor_b_labels, paste0))
+    fieldbook <- agricolae::design.rcbd(trt = trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook <- fieldbook[order(fieldbook$block), , drop = FALSE]
+    fieldbook$Plot <- ave(seq_len(nrow(fieldbook)), fieldbook$block, FUN = seq_along)
+    factors <- parse_factorial_treatment(fieldbook$trtname)
+    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = as.character(trtname))
+    list(
+      design = design,
+      summary = data.frame(FactorALevels = factor_a_trt, FactorBLevels = factor_b_trt, Treatments = length(trt_labels), Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      plot_data = plot_data
+    )
   } else if (identical(design, "Augmented RCBD")) {
     validate(need(!is.null(checks) && checks >= 2, "Augmented RCBD needs at least two checks."))
     validate(need(!is.null(test_trt) && test_trt >= 2, "Augmented RCBD needs at least two test treatments."))
@@ -559,7 +630,15 @@ run_design_layout <- function(
     sub_labels <- sprintf("B%s", seq_len(sub_trt))
     fieldbook <- agricolae::design.split(main_labels, sub_labels, r = rep, serie = 0, seed = seed, kinds = kind, randomization = TRUE)$book
     fieldbook <- fieldbook[order(fieldbook$block, fieldbook$plots, fieldbook$splots), , drop = FALSE]
-    plot_data <- transform(fieldbook, rep_num = as.numeric(block), main_num = as.numeric(plots), sub_num = as.numeric(splots), label = sprintf("%s/%s", as.character(main), as.character(sub)))
+    plot_data <- transform(
+      fieldbook,
+      rep_num = as.numeric(block),
+      main_num = as.numeric(plots),
+      sub_num = as.numeric(splots),
+      main_treatment = as.character(main),
+      sub_treatment = as.character(sub),
+      label = sprintf("%s/%s", as.character(main), as.character(sub))
+    )
     list(
       design = design,
       summary = data.frame(MainPlotTreatments = main_trt, SubPlotTreatments = sub_trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
@@ -916,20 +995,54 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
     ggplot2::theme_minimal() +
     ggplot2::labs(title = "Interaction Plot of Observed Means", x = "Main Plot", y = "Mean", color = "Subplot")
 
-  split_lsd_cv_table <- metrics_table(list(
-    "Main plot LSD" = split_results$LSD$MainPlot$LSD,
-    "Main plot SED" = split_results$LSD$MainPlot$SED,
-    "Main plot Error MS" = split_results$LSD$MainPlot$ErrorMS,
-    "Main plot DF" = split_results$LSD$MainPlot$DF,
-    "Subplot LSD" = split_results$LSD$SubPlot$LSD,
-    "Subplot SED" = split_results$LSD$SubPlot$SED,
-    "Subplot Error MS" = split_results$LSD$SubPlot$ErrorMS,
-    "Subplot DF" = split_results$LSD$SubPlot$DF,
-    "Interaction LSD" = split_results$LSD$Interaction$LSD,
-    "Interaction SED" = split_results$LSD$Interaction$SED,
-    "Main plot CV (%)" = split_results$CV$MainPlotCV,
-    "Subplot CV (%)" = split_results$CV$SubPlotCV
-  ))
+  split_lsd_cv_table <- data.frame(
+    Comparison = c(
+      "Main plot",
+      "Subplot",
+      "Subplot within main plot",
+      "Main-plot means at same/different subplot levels"
+    ),
+    `Error MS` = c(
+      round(split_results$LSD$MainPlot$ErrorMS, 4),
+      round(split_results$LSD$SubPlot$ErrorMS, 4),
+      round(split_results$LSD$Interaction$ErrorMS, 4),
+      sprintf(
+        "Ea: %s; Eb: %s",
+        round(split_results$LSD$Interaction2$ErrorA, 4),
+        round(split_results$LSD$Interaction2$ErrorB, 4)
+      )
+    ),
+    DF = c(
+      split_results$LSD$MainPlot$DF,
+      split_results$LSD$SubPlot$DF,
+      split_results$LSD$Interaction$DF,
+      sprintf(
+        "DFa: %s; DFb: %s",
+        split_results$LSD$Interaction2$DFa,
+        split_results$LSD$Interaction2$DFb
+      )
+    ),
+    `SE(m)` = round(c(
+      split_results$LSD$MainPlot$SED,
+      split_results$LSD$SubPlot$SED,
+      split_results$LSD$Interaction$SED,
+      split_results$LSD$Interaction2$SED
+    ), 4),
+    CD = round(c(
+      split_results$LSD$MainPlot$LSD,
+      split_results$LSD$SubPlot$LSD,
+      split_results$LSD$Interaction$LSD,
+      split_results$LSD$Interaction2$LSD
+    ), 4),
+    `CV (%)` = c(
+      round(split_results$CV$MainPlotCV, 4),
+      round(split_results$CV$SubPlotCV, 4),
+      NA,
+      NA
+    ),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
 
   residuals_final <- residuals(final_model)
   fitted_final <- fitted(final_model)

@@ -8,26 +8,28 @@ library(readxl)
 
 app_catalog <- list(
   list(key = "portal", label = "Portal", path = "/"),
-  list(key = "design-analyzer", label = "Design Analyzer", path = "/design-analyzer/"),
+  list(key = "design-analyzer", label = "Design Randomizer", path = "/design-analyzer/"),
   list(key = "crd-rbd", label = "CRD / RBD", path = "/crd-rbd/"),
   list(key = "factorial-design", label = "Factorial Design", path = "/factorial-design/"),
   list(key = "pooled-anova", label = "Pooled ANOVA", path = "/pooled-anova/"),
   list(key = "split-plot", label = "Split Plot", path = "/split-plot/"),
   list(key = "correlation-regression", label = "Correlation & Regression", path = "/correlation-regression/"),
   list(key = "descriptive-statistics", label = "Descriptive Statistics", path = "/descriptive-statistics/"),
-  list(key = "compare-means", label = "Compare Means", path = "/compare-means/")
+  list(key = "compare-means", label = "Compare Means", path = "/compare-means/"),
+  list(key = "met-stability", label = "MET Stability", path = "/met-stability/")
 )
 
 local_app_catalog <- list(
   list(key = "portal", label = "Portal", path = "./"),
-  list(key = "design-analyzer", label = "Design Analyzer", path = "?app=design-analyzer"),
+  list(key = "design-analyzer", label = "Design Randomizer", path = "?app=design-analyzer"),
   list(key = "crd-rbd", label = "CRD / RBD", path = "?app=crd-rbd"),
   list(key = "factorial-design", label = "Factorial Design", path = "?app=factorial-design"),
   list(key = "pooled-anova", label = "Pooled ANOVA", path = "?app=pooled-anova"),
   list(key = "split-plot", label = "Split Plot", path = "?app=split-plot"),
   list(key = "correlation-regression", label = "Correlation & Regression", path = "?app=correlation-regression"),
   list(key = "descriptive-statistics", label = "Descriptive Statistics", path = "?app=descriptive-statistics"),
-  list(key = "compare-means", label = "Compare Means", path = "?app=compare-means")
+  list(key = "compare-means", label = "Compare Means", path = "?app=compare-means"),
+  list(key = "met-stability", label = "MET Stability", path = "?app=met-stability")
 )
 
 research_station_styles <- HTML("

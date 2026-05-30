@@ -7,7 +7,7 @@ portal_ui <- function(catalog = app_catalog) {
       column(6, div(class = "station-card", h3("Support"), p("Version 1.0 deployment scaffold"), p("Recommended host: single cloud VM with Docker Compose."), p("Update this section with station support contacts before production."), p("Modules are linked below.")))
     ),
     fluidRow(lapply(catalog[-1], function(app) {
-      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
+      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, factorial CRD/RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.", "met-stability" = "Multi-environment trial stability analysis: AMMI, GGE, WAASB, WAASBY, BLUP-based stability indices, individual and combined ANOVA, and simultaneous selection indices.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
     }))
   )
 }
@@ -16,15 +16,19 @@ portal_server <- function(input, output, session) {}
 
 design_analyzer_ui <- function(nav_catalog = app_catalog) {
   station_page(
-    "Design Analyzer",
+    "Design Randomizer",
     "Generate randomized layout plans for common agricultural experiments and export the allocation table.",
     "design-analyzer",
     tagList(
-      selectInput("design_type", "Design type", choices = c("CRD", "RBD", "Split Plot", "Augmented RCBD", "Strip Plot")),
+      selectInput("design_type", "Design type", choices = c("CRD", "RBD", "Factorial CRD", "Factorial RBD", "Split Plot", "Augmented RCBD", "Strip Plot")),
       conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD'",
         numericInput("trt", "Number of treatments", value = 4, min = 2)
       ),
-      conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD' || input.design_type == 'Split Plot' || input.design_type == 'Augmented RCBD' || input.design_type == 'Strip Plot'",
+      conditionalPanel("input.design_type == 'Factorial CRD' || input.design_type == 'Factorial RBD'",
+        numericInput("factor_a_trt", "Factor A levels", value = 2, min = 2),
+        numericInput("factor_b_trt", "Factor B levels", value = 2, min = 2)
+      ),
+      conditionalPanel("input.design_type == 'CRD' || input.design_type == 'RBD' || input.design_type == 'Factorial CRD' || input.design_type == 'Factorial RBD' || input.design_type == 'Split Plot' || input.design_type == 'Augmented RCBD' || input.design_type == 'Strip Plot'",
         numericInput("rep", "Replications / blocks", value = 3, min = 2)
       ),
       conditionalPanel("input.design_type == 'Split Plot' || input.design_type == 'Strip Plot'",
@@ -36,7 +40,7 @@ design_analyzer_ui <- function(nav_catalog = app_catalog) {
         numericInput("test_trt", "Number of test treatments", value = 6, min = 2)
       ),
       numericInput("seed", "Randomization seed", value = 1, min = 1),
-      build_help_box("What this module does", c("Creates a randomized fieldbook similar to the grapesAgri layout workflow.", "Use the seed to reproduce a layout exactly.", "Download the allocation table for field teams or reporting.")),
+      build_help_box("What this module does", c("Creates a randomized fieldbook similar to the grapesAgri layout workflow.", "Supports CRD, RBD, two-factor factorial CRD/RBD, split-plot, strip-plot, and augmented RCBD layouts.", "Use the seed to reproduce a layout exactly.", "Download the allocation table for field teams or reporting.")),
       actionButton("generate_layout", "Generate layout", class = "btn-primary"),
       tags$hr(),
       downloadButton("download_layout_csv", "Download allocation CSV"),
@@ -64,6 +68,8 @@ design_analyzer_server <- function(input, output, session) {
         rep = input$rep,
         main_trt = input$main_trt,
         sub_trt = input$sub_trt,
+        factor_a_trt = input$factor_a_trt,
+        factor_b_trt = input$factor_b_trt,
         checks = input$checks,
         test_trt = input$test_trt
       ),
@@ -81,17 +87,17 @@ design_analyzer_server <- function(input, output, session) {
     req(layout_plan())
     plan <- layout_plan()
 
-    if (identical(plan$design, "CRD")) {
+    if (identical(plan$design, "CRD") || identical(plan$design, "Factorial CRD")) {
       desplot::desplot(
         form = row ~ col,
         data = plan$plot_data,
         text = label,
         out1 = row,
         out2 = col,
-        main = "CRD Layout",
+        main = sprintf("%s Layout", plan$design),
         cex = 1.1
       )
-    } else if (identical(plan$design, "RBD")) {
+    } else if (identical(plan$design, "RBD") || identical(plan$design, "Factorial RBD")) {
       desplot::desplot(
         form = block_num ~ plot_num,
         data = plan$plot_data,
@@ -99,7 +105,7 @@ design_analyzer_server <- function(input, output, session) {
         out1 = block_num,
         out2 = plot_num,
         out2.gpar = list(col = "#547d43"),
-        main = "RBD Layout",
+        main = sprintf("%s Layout", plan$design),
         cex = 1.1
       )
     } else if (identical(plan$design, "Augmented RCBD")) {
@@ -114,10 +120,10 @@ design_analyzer_server <- function(input, output, session) {
       )
     } else if (identical(plan$design, "Split Plot")) {
       desplot::desplot(
-        form = rep_num ~ main_num + sub_num,
+        form = main_treatment ~ main_num + sub_num,
         data = plan$plot_data,
-        text = label,
-        out1 = rep_num,
+        text = sub_treatment,
+        out1 = main_num,
         out2 = sub_num,
         main = "Split-Plot Layout",
         cex = 1
@@ -697,6 +703,7 @@ split_plot_ui <- function(nav_catalog = app_catalog) {
       selectInput("csv_table", "CSV table to download", choices = c("Full ANOVA", "Additive ANOVA", "Split ANOVA", "Main plot means", "Subplot means", "Interaction means", "Split LSD/CV summary", "EMMeans main plot", "EMMeans subplot", "Tukey main plot", "Tukey subplot", "CLD main plot", "CLD subplot", "Diagnostics")),
       downloadButton("download_csv", "Download CSV"),
       downloadButton("download_split_pdf_report", "Download PDF report"),
+      downloadButton("download_split_word_report", "Download Word report"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -1393,6 +1400,19 @@ split_plot_server <- function(input, output, session) {
     }
   )
 
+  output$download_split_word_report <- downloadHandler(
+    filename = function() "split-plot-report.docx",
+    content = function(file) {
+      req(analysis())
+
+      render_parameterized_report(
+        output_file = file,
+        output_format = "word_document",
+        params = report_params()
+      )
+    }
+  )
+
   output$download_report <- downloadHandler(
     filename = function() "split-plot-report.html",
     content = function(file) {
@@ -1580,6 +1600,662 @@ correlation_regression_server <- function(input, output, session) {
         list(title = "Fit statistics", table = analysis()$fit),
         list(title = "Diagnostics", table = analysis()$diagnostics)
       ), file)
+    }
+  )
+}
+
+
+# ============================================================
+# MET STABILITY UI
+# ============================================================
+met_stability_ui <- function(nav_catalog = app_catalog) {
+  station_page(
+    "MET Stability Analysis",
+    "Multi-environment trial analysis: individual & combined ANOVA, AMMI, GGE, WAASB, BLUP-based stability indices, and simultaneous selection indices.",
+    "met-stability",
+    tagList(
+      fileInput("met_upload", "Upload CSV / TSV / XLSX",
+                accept = c(".csv", ".tsv", ".txt", ".xls", ".xlsx")),
+      textAreaInput("met_data_input", "Or paste a table", value = met_example, rows = 8),
+
+      radioButtons(
+        "met_mode", "Analysis mode",
+        choices = c("Single trait" = "single", "Multi-trait batch" = "batch"),
+        selected = "single",
+        inline = TRUE
+      ),
+      uiOutput("met_gen_var_ui"),
+      uiOutput("met_rep_var_ui"),
+      uiOutput("met_trait_var_ui"),
+      uiOutput("met_lower_traits_ui"),
+
+      checkboxInput("met_use_sep_env",
+                    "Build ENV from separate Season x Location columns", value = FALSE),
+      conditionalPanel("input.met_use_sep_env",
+        uiOutput("met_season_var_ui"),
+        uiOutput("met_loc_var_ui")
+      ),
+      conditionalPanel("!input.met_use_sep_env",
+        uiOutput("met_env_var_ui")
+      ),
+
+      numericInput("met_alpha", "Significance level",
+                   value = 0.05, min = 0.001, max = 0.2, step = 0.01),
+
+      build_help_box("Required data format", c(
+        "Long format - one row per plot observation.",
+        "Genotype: variety / line label.",
+        "Environment: combined label (e.g. 2023_Delhi) OR use Season x Location mode.",
+        "Rep: replication / block identifier.",
+        "Trait: one numeric response column for single mode, or multiple numeric traits for batch mode."
+      )),
+
+      actionButton("met_run", "Run MET Analysis", class = "btn-primary"),
+      tags$hr(),
+      selectInput("met_csv_table", "CSV table to download",
+                  choices = c("Genotype Means", "Combined ANOVA", "Over-Year ANOVA",
+                              "AMMI IPCA", "AMMI PC Scores", "AMMI Stability",
+                              "WAASB Scores", "BLUP Indices", "Parametric SSI",
+                              "Culled SSI", "Top 10 All Traits", "Multi-Trait Index",
+                              "Batch Errors")),
+      downloadButton("met_download_csv",    "Download CSV"),
+      downloadButton("met_download_xlsx",   "Download XLSX"),
+      downloadButton("met_download_report", "Download HTML Report"),
+      uiOutput("met_error_msg")
+    ),
+    tagList(
+      div(class = "station-panel", uiOutput("met_cached_result_header")),
+      analysis_tabs(
+        tabPanel("Data Preview",
+          DT::dataTableOutput("met_data_table")
+        ),
+        tabPanel("Individual ANOVA",
+          uiOutput("met_env_selector_ui"),
+          tags$hr(),
+          tableOutput("met_ind_anova_table"),
+          uiOutput("met_ind_anova_summary")
+        ),
+        tabPanel("Combined ANOVA",
+          tableOutput("met_comb_anova_table"),
+          uiOutput("met_comb_anova_summary")
+        ),
+        tabPanel("Over-Year ANOVA",
+          uiOutput("met_year_anova_msg"),
+          tableOutput("met_year_anova_table")
+        ),
+        tabPanel("Genotype Means",
+          tableOutput("met_gen_means_table"),
+          tags$br(),
+          plotOutput("met_gen_means_plot", height = "400px")
+        ),
+        tabPanel("AMMI",
+          tabsetPanel(
+            tabPanel("AMMI ANOVA", tableOutput("met_ammi_anova_table")),
+            tabPanel("IPCA Summary", tableOutput("met_ammi_ipca_table")),
+            tabPanel("PC Scores", tableOutput("met_ammi_scores_table")),
+            tabPanel("Stability Indices",
+              p(class = "station-muted",
+                "ASV: AMMI Stability Value | SIPC: Sum of absolute IPCAs | EV: Eigenvalue stability | ZA: Z-score average | WAAS: Weighted average absolute scores"),
+              tableOutput("met_ammi_stab_table")
+            )
+          )
+        ),
+        tabPanel("AMMI Biplots",
+          tabsetPanel(
+            tabPanel("AMMI1 - Mean vs PC1", plotOutput("met_ammi1_plot", height = "520px")),
+            tabPanel("AMMI2 - PC1 vs PC2",  plotOutput("met_ammi2_plot", height = "520px"))
+          ),
+        ),
+        tabPanel("GGE Biplots",
+          tabsetPanel(
+            tabPanel("Mean vs Stability",  plotOutput("met_gge_mean_stab_plot", height = "520px")),
+            tabPanel("Which-Won-Where",    plotOutput("met_gge_www_plot",       height = "520px")),
+            tabPanel("Discriminativeness", plotOutput("met_gge_disc_plot",      height = "520px")),
+            tabPanel("Env. Relationship",  plotOutput("met_gge_env_plot",       height = "520px"))
+          )
+        ),
+        tabPanel("WAASB / WAASBY",
+          tableOutput("met_waasb_table"),
+          tags$br(),
+          plotOutput("met_waasby_plot", height = "420px")
+        ),
+        tabPanel("BLUPs",
+          p(class = "station-muted",
+            "HMGV: Harmonic Mean of Genotypic Values | RPGV: Relative Performance of Genotypic Values | HMRPGV: Harmonic Mean of RPGV (combined stability + yield index)"),
+          tableOutput("met_blup_table"),
+          tags$br(),
+          plotOutput("met_blup_plot", height = "400px")
+        ),
+        tabPanel("SSI",
+          tabsetPanel(
+            tabPanel("Parametric SSI (P-SSI)",
+              p(class = "station-muted",
+                "Weighted index: 70% yield + 30% stability. Higher P-SSI = better."),
+              tableOutput("met_pssi_table")
+            ),
+            tabPanel("Non-Parametric SSI (NP-SSI)",
+              p(class = "station-muted",
+                "Rank-sum of yield rank + stability rank. Lower NP-SSI = better."),
+              tableOutput("met_npssi_table")
+            ),
+            tabPanel("Culled SSI (C-SSI)",
+              p(class = "station-muted",
+                "Stable genotypes (WAASB < mean) ranked by yield after culling unstable entries."),
+              tableOutput("met_cssi_table")
+            )
+          )
+        ),
+        tabPanel("Batch Summary",
+          tabsetPanel(
+            tabPanel("Top 10 by Trait", tableOutput("met_batch_top_table")),
+            tabPanel("Multi-Trait Index", tableOutput("met_batch_index_table")),
+            tabPanel("Trait Errors", tableOutput("met_batch_errors_table"))
+          ),
+        )
+      )
+    ),
+    nav_catalog = nav_catalog
+  )
+}
+
+# ============================================================
+# MET STABILITY SERVER
+# ============================================================
+met_stability_server <- function(input, output, session) {
+
+  err <- reactiveVal(NULL)
+
+  dataset <- reactive({
+    tryCatch(
+      read_dataset_input(input$met_upload, input$met_data_input),
+      error = function(e) { err(conditionMessage(e)); NULL }
+    )
+  })
+
+  all_cols     <- reactive({ df <- dataset(); if (is.null(df)) character(0) else names(df) })
+  numeric_cols <- reactive({
+    df <- dataset()
+    if (is.null(df)) character(0) else names(df)[vapply(df, is.numeric, logical(1))]
+  })
+
+  met_default_lower_traits <- function(cols) {
+    intersect(c("DFF50", "DPM"), cols)
+  }
+
+  met_data_source_signature <- reactive({
+    upload <- input$met_upload
+    if (!is.null(upload) && nzchar(upload$datapath %||% "")) {
+      return(list(
+        type = "upload",
+        name = upload$name,
+        size = upload$size,
+        type_hint = upload$type
+      ))
+    }
+    pasted <- input$met_data_input %||% ""
+    list(
+      type = "pasted",
+      length = nchar(pasted),
+      head = substr(pasted, 1, 120),
+      tail = substr(pasted, max(1, nchar(pasted) - 119), nchar(pasted))
+    )
+  })
+
+  current_met_signature <- reactive({
+    lower_traits <- input$met_lower_traits %||% character(0)
+    use_sep_env <- isTRUE(input$met_use_sep_env)
+    env_col_use <- if (use_sep_env) "ENV_COMBINED" else input$met_env_col
+    traits <- if (identical(input$met_mode, "batch")) input$met_trait_cols else input$met_trait_col
+
+    met_run_signature(
+      mode = input$met_mode %||% "single",
+      data_source = met_data_source_signature(),
+      gen_col = input$met_gen_col,
+      env_col = env_col_use,
+      rep_col = input$met_rep_col,
+      trait_col = input$met_trait_col,
+      trait_cols = traits,
+      lower_traits = lower_traits,
+      alpha = input$met_alpha,
+      use_sep_env = use_sep_env,
+      season_col = if (use_sep_env) input$met_season_col else NULL,
+      loc_col = if (use_sep_env) input$met_loc_col else NULL
+    )
+  })
+
+  output$met_gen_var_ui <- renderUI({
+    cols <- all_cols(); if (length(cols) == 0) return(NULL)
+    sel  <- if ("GEN" %in% cols) "GEN" else if ("Genotype" %in% cols) "Genotype" else cols[1]
+    selectInput("met_gen_col", "Genotype column", choices = cols, selected = sel)
+  })
+  output$met_rep_var_ui <- renderUI({
+    cols <- all_cols(); if (length(cols) == 0) return(NULL)
+    sel  <- if ("REP" %in% cols) "REP" else if ("Rep" %in% cols) "Rep" else
+            if ("Replication" %in% cols) "Replication" else cols[min(3, length(cols))]
+    selectInput("met_rep_col", "Replication column", choices = cols, selected = sel)
+  })
+  output$met_trait_var_ui <- renderUI({
+    cols <- numeric_cols()
+    if (length(cols) == 0) return(div(class = "alert alert-warning", "No numeric columns detected."))
+    tagList(
+      conditionalPanel(
+        "input.met_mode == 'single'",
+        selectInput("met_trait_col", "Trait (response) column", choices = cols, selected = cols[1])
+      ),
+      conditionalPanel(
+        "input.met_mode == 'batch'",
+        selectizeInput("met_trait_cols", "Traits for batch analysis",
+                       choices = cols, selected = cols,
+                       multiple = TRUE,
+                       options = list(plugins = list("remove_button")))
+      )
+    )
+  })
+  output$met_lower_traits_ui <- renderUI({
+    cols <- numeric_cols()
+    if (length(cols) == 0) return(NULL)
+    selectizeInput(
+      "met_lower_traits", "Lower-is-better traits",
+      choices = cols,
+      selected = met_default_lower_traits(cols),
+      multiple = TRUE,
+      options = list(plugins = list("remove_button"))
+    )
+  })
+  output$met_env_var_ui <- renderUI({
+    cols <- all_cols(); if (length(cols) == 0) return(NULL)
+    sel  <- if ("ENV" %in% cols) "ENV" else if ("Environment" %in% cols) "Environment" else cols[min(2, length(cols))]
+    selectInput("met_env_col", "Environment column", choices = cols, selected = sel)
+  })
+  output$met_season_var_ui <- renderUI({
+    cols <- all_cols(); if (length(cols) == 0) return(NULL)
+    sel  <- if ("SEASON" %in% cols) "SEASON" else if ("Season" %in% cols) "Season" else
+            if ("Year" %in% cols) "Year" else cols[1]
+    selectInput("met_season_col", "Season / Year column", choices = cols, selected = sel)
+  })
+  output$met_loc_var_ui <- renderUI({
+    cols <- all_cols(); if (length(cols) == 0) return(NULL)
+    sel  <- if ("LOC" %in% cols) "LOC" else if ("Location" %in% cols) "Location" else cols[min(3, length(cols))]
+    selectInput("met_loc_col", "Location column", choices = cols, selected = sel)
+  })
+
+  analysis <- eventReactive(input$met_run, {
+    err(NULL)
+    tryCatch({
+      df             <- read_dataset_input(input$met_upload, input$met_data_input)
+      season_col_use <- NULL
+      loc_col_use    <- NULL
+      env_col_use    <- input$met_env_col
+      lower_traits   <- input$met_lower_traits %||% character(0)
+
+      if (isTRUE(input$met_use_sep_env)) {
+        req(input$met_season_col, input$met_loc_col)
+        df$ENV_COMBINED <- interaction(df[[input$met_season_col]], df[[input$met_loc_col]], sep = "_", drop = TRUE)
+        env_col_use     <- "ENV_COMBINED"
+        season_col_use  <- input$met_season_col
+        loc_col_use     <- input$met_loc_col
+      }
+
+      if (identical(input$met_mode, "batch")) {
+        req(input$met_trait_cols)
+        traits <- input$met_trait_cols
+        direction_map <- stats::setNames(ifelse(traits %in% lower_traits, "l", "h"), traits)
+        batch <- run_met_batch_analysis(
+          data          = df,
+          gen_col       = input$met_gen_col,
+          env_col       = env_col_use,
+          rep_col       = input$met_rep_col,
+          trait_cols    = traits,
+          direction_map = direction_map,
+          season_col    = season_col_use,
+          loc_col       = loc_col_use,
+          alpha         = input$met_alpha
+        )
+        if (length(batch$results) == 0) {
+          stop("Batch analysis failed for all selected traits.")
+        }
+        list(
+          mode = "batch",
+          batch = batch,
+          signature = current_met_signature(),
+          run_time = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
+          trait_cols = traits,
+          direction_map = direction_map,
+          columns = list(
+            gen_col = input$met_gen_col,
+            env_col = env_col_use,
+            rep_col = input$met_rep_col,
+            season_col = season_col_use,
+            loc_col = loc_col_use
+          ),
+          alpha = input$met_alpha
+        )
+      } else {
+        req(input$met_trait_col)
+        direction <- if (input$met_trait_col %in% lower_traits) "l" else "h"
+        result <- run_met_analysis(
+          data       = df,
+          gen_col    = input$met_gen_col,
+          env_col    = env_col_use,
+          rep_col    = input$met_rep_col,
+          trait_col  = input$met_trait_col,
+          season_col = season_col_use,
+          loc_col    = loc_col_use,
+          alpha      = input$met_alpha,
+          direction  = direction
+        )
+        list(
+          mode = "single",
+          result = result,
+          signature = current_met_signature(),
+          run_time = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
+          trait_col = input$met_trait_col,
+          direction_map = stats::setNames(direction, input$met_trait_col),
+          columns = list(
+            gen_col = input$met_gen_col,
+            env_col = env_col_use,
+            rep_col = input$met_rep_col,
+            season_col = season_col_use,
+            loc_col = loc_col_use
+          ),
+          alpha = input$met_alpha
+        )
+      }
+    }, error = function(e) { err(conditionMessage(e)); NULL })
+  })
+
+  current_result <- reactive({
+    payload <- analysis()
+    req(payload)
+    met_select_cached_result(payload, input$met_batch_view_trait)
+  })
+
+  batch_result <- reactive({
+    payload <- analysis()
+    if (is.null(payload) || !identical(payload$mode, "batch")) return(NULL)
+    payload$batch
+  })
+
+  output$met_error_msg <- renderUI({
+    payload <- analysis()
+    messages <- list()
+    if (!is.null(err())) {
+      messages <- c(messages, list(div(class = "alert alert-danger", tags$b("Error: "), err())))
+    }
+    if (!is.null(payload) && identical(payload$mode, "batch") && nrow(payload$batch$errors) > 0) {
+      messages <- c(messages, list(div(class = "alert alert-warning",
+        tags$b("Some traits failed: "),
+        paste(payload$batch$errors$Trait, collapse = ", ")
+      )))
+    }
+    if (!is.null(payload) && met_signature_changed(payload$signature, current_met_signature())) {
+      messages <- c(messages, list(div(class = "alert alert-warning",
+        tags$b("Displayed results are from the last completed run. "),
+        "Inputs have changed; click Run MET Analysis to refresh cached results."
+      )))
+    }
+    res <- tryCatch(current_result(), error = function(e) NULL)
+    if (!is.null(res) && length(res$warnings) > 0) {
+      messages <- c(messages, list(div(class = "alert alert-info",
+        tags$b("Model notes: "),
+        paste(unique(res$warnings), collapse = " | ")
+      )))
+    }
+    if (length(messages) == 0) return(NULL)
+    do.call(tagList, messages)
+  })
+
+  output$met_cached_result_header <- renderUI({
+    payload <- analysis()
+    if (is.null(payload)) {
+      return(div(class = "station-muted", "Run MET Analysis to generate results."))
+    }
+    selected <- isolate(input$met_batch_view_trait)
+    traits <- met_payload_traits(payload)
+    if (!is.null(selected) && selected %in% traits) {
+      selected_trait <- selected
+    } else {
+      selected_trait <- traits[1]
+    }
+
+    status <- met_payload_status_text(payload, selected_trait)
+    stale <- met_signature_changed(payload$signature, current_met_signature())
+
+    if (identical(payload$mode, "batch")) {
+      tagList(
+        fluidRow(
+          column(
+            5,
+            selectInput(
+              "met_batch_view_trait",
+              "Computed trait to view",
+              choices = traits,
+              selected = selected_trait
+            )
+          ),
+          column(
+            7,
+            div(class = "station-muted", status),
+            if (isTRUE(stale)) div(class = "alert alert-warning",
+              "Inputs changed after this batch run. The displayed trait output is cached from the last completed run."
+            )
+          )
+        )
+      )
+    } else {
+      tagList(
+        div(class = "station-muted", status),
+        if (isTRUE(stale)) div(class = "alert alert-warning",
+          "Inputs changed after this run. The displayed output is cached from the last completed run."
+        )
+      )
+    }
+  })
+
+  output$met_data_table <- DT::renderDataTable({
+    req(current_result()); current_result()$dataset
+  }, options = list(pageLength = 10, scrollX = TRUE))
+
+  output$met_env_selector_ui <- renderUI({
+    req(current_result())
+    envs <- names(current_result()$ind_anova)
+    selectInput("met_sel_env", "Select environment to view", choices = envs, selected = envs[1])
+  })
+  output$met_ind_anova_table <- renderTable({
+    req(current_result(), input$met_sel_env); current_result()$ind_anova[[input$met_sel_env]]
+  }, rownames = FALSE)
+  output$met_ind_anova_summary <- renderUI({
+    req(current_result(), input$met_sel_env)
+    tbl <- current_result()$ind_anova[[input$met_sel_env]]
+    cv  <- attr(tbl, "cv_pct"); gm <- attr(tbl, "grand_mean")
+    if (!is.null(cv) && !is.null(gm))
+      div(class = "station-muted", sprintf("Grand Mean: %.4f  |  CV: %.2f%%", gm, cv))
+  })
+
+  output$met_comb_anova_table <- renderTable({ req(current_result()); current_result()$comb_anova }, rownames = FALSE)
+  output$met_comb_anova_summary <- renderUI({
+    req(current_result())
+    tbl <- current_result()$comb_anova; cv <- attr(tbl, "cv_pct"); gm <- attr(tbl, "grand_mean")
+    if (!is.null(cv) && !is.null(gm))
+      div(class = "station-muted", sprintf("Grand Mean: %.4f  |  CV: %.2f%%", gm, cv))
+  })
+
+  output$met_year_anova_msg <- renderUI({
+    req(current_result())
+    if (is.null(current_result()$year_anova))
+      div(class = "alert alert-info",
+          "Over-Year ANOVA is available only when Season and Location columns are specified.",
+          "Enable 'Build ENV from separate Season x Location columns' in the sidebar.")
+  })
+  output$met_year_anova_table <- renderTable({ req(current_result()); current_result()$year_anova }, rownames = FALSE)
+
+  output$met_gen_means_table <- renderTable({ req(current_result()); current_result()$gen_means }, rownames = FALSE)
+  output$met_gen_means_plot  <- renderPlot({
+    req(current_result())
+    gm <- current_result()$gen_means
+    gm$Genotype <- factor(gm$Genotype, levels = rev(gm$Genotype))
+    ggplot2::ggplot(gm, ggplot2::aes(x = Genotype, y = Mean, fill = Mean)) +
+      ggplot2::geom_col(alpha = 0.9) +
+      ggplot2::geom_errorbar(ggplot2::aes(ymin = Mean - SD, ymax = Mean + SD), width = 0.3, color = "grey30") +
+      ggplot2::coord_flip() +
+      ggplot2::scale_fill_gradient(low = "#a8d5a2", high = "#1f4d3b") +
+      ggplot2::theme_minimal(base_size = 12) +
+      ggplot2::theme(legend.position = "none") +
+      ggplot2::labs(title = paste("Genotype means +/-SD for", current_result()$trait), x = "Genotype", y = "Mean")
+  })
+
+  output$met_ammi_anova_table  <- renderTable({ req(current_result()); current_result()$ammi$anova }, rownames = FALSE)
+  output$met_ammi_ipca_table   <- renderTable({ req(current_result()); current_result()$ammi$ipca_summary }, rownames = FALSE)
+  output$met_ammi_scores_table <- renderTable({ req(current_result()); current_result()$ammi$pc_scores }, rownames = FALSE)
+  output$met_ammi_stab_table   <- renderTable({ req(current_result()); current_result()$ammi$stability }, rownames = FALSE)
+
+  output$met_ammi1_plot <- renderPlot({
+    req(current_result()); mod <- current_result()$ammi$mod
+    validate(need(!is.null(mod), "AMMI model not available. Check data and re-run."))
+    metan::plot_scores(mod, type = 1)
+  })
+  output$met_ammi2_plot <- renderPlot({
+    req(current_result()); mod <- current_result()$ammi$mod
+    validate(need(!is.null(mod), "AMMI model not available. Check data and re-run."))
+    metan::plot_scores(mod, type = 2)
+  })
+
+  make_gge_plot <- function(type_num) {
+    renderPlot({
+      req(current_result()); mod <- current_result()$gge$mod
+      validate(need(!is.null(mod), "GGE model not available. Check data and re-run."))
+      plot(mod, type = type_num)
+    })
+  }
+  output$met_gge_mean_stab_plot <- make_gge_plot(2)
+  output$met_gge_www_plot       <- make_gge_plot(3)
+  output$met_gge_disc_plot      <- make_gge_plot(4)
+  output$met_gge_env_plot       <- make_gge_plot(6)
+
+  output$met_waasb_table <- renderTable({ req(current_result()); current_result()$waasb$scores }, rownames = FALSE)
+  output$met_waasby_plot <- renderPlot({
+    req(current_result()); mod <- current_result()$waasb$mod
+    validate(need(!is.null(mod), "WAASB model not available. Check data and re-run."))
+    plot_fun <- tryCatch(getExportedValue("metan", "plot_waasby"), error = function(e) NULL)
+    if (is.function(plot_fun)) plot_fun(mod) else metan::plot_scores(mod, type = 3)
+  })
+
+  output$met_blup_table <- renderTable({ req(current_result()); current_result()$blup }, rownames = FALSE)
+  output$met_blup_plot  <- renderPlot({
+    req(current_result()); blup <- current_result()$blup
+    validate(need(!is.null(blup) && "HMRPGV" %in% names(blup), "BLUP indices not available."))
+    blup     <- blup[!is.na(blup$HMRPGV), ]
+    blup$GEN <- factor(blup$GEN, levels = rev(blup$GEN[order(blup$Rank_HMRPGV)]))
+    ggplot2::ggplot(blup, ggplot2::aes(x = GEN, y = HMRPGV, fill = HMRPGV)) +
+      ggplot2::geom_col(alpha = 0.9) +
+      ggplot2::coord_flip() +
+      ggplot2::scale_fill_gradient(low = "#a8d5a2", high = "#1f4d3b") +
+      ggplot2::theme_minimal(base_size = 12) +
+      ggplot2::theme(legend.position = "none") +
+      ggplot2::labs(title = "HMRPGV - Stability-adjusted BLUP ranking", x = "Genotype", y = "HMRPGV")
+  })
+
+  output$met_pssi_table <- renderTable({
+    req(current_result()); ssi <- current_result()$ssi$full; if (is.null(ssi)) return(NULL)
+    cols <- intersect(c("GEN","Mean","WAASB","WAASBY","P_SSI","Rank_P_SSI"), names(ssi))
+    ssi[, cols, drop = FALSE]
+  }, rownames = FALSE)
+  output$met_npssi_table <- renderTable({
+    req(current_result()); ssi <- current_result()$ssi$full; if (is.null(ssi)) return(NULL)
+    ssi  <- ssi[order(ssi$Rank_NP_SSI), ]
+    cols <- intersect(c("GEN","Mean","WAASB","Rank_Yield","Rank_Stability","NP_SSI","Rank_NP_SSI"), names(ssi))
+    ssi[, cols, drop = FALSE]
+  }, rownames = FALSE)
+  output$met_cssi_table <- renderTable({ req(current_result()); current_result()$ssi$culled }, rownames = FALSE)
+
+  output$met_batch_top_table <- renderTable({
+    batch <- batch_result()
+    if (is.null(batch)) return(data.frame(Message = "Run multi-trait batch mode to see this summary."))
+    batch$top_summary
+  }, rownames = FALSE)
+  output$met_batch_index_table <- renderTable({
+    batch <- batch_result()
+    if (is.null(batch)) return(data.frame(Message = "Run multi-trait batch mode to see this summary."))
+    batch$multi_trait_index
+  }, rownames = FALSE)
+  output$met_batch_errors_table <- renderTable({
+    batch <- batch_result()
+    if (is.null(batch)) return(data.frame(Message = "Run multi-trait batch mode to see trait errors."))
+    if (nrow(batch$errors) == 0) return(data.frame(Message = "No trait-level errors."))
+    batch$errors
+  }, rownames = FALSE)
+
+  table_for_download <- function() {
+    req(current_result())
+    res <- current_result()
+    batch <- batch_result()
+    tbl_map <- list(
+      "Genotype Means" = res$gen_means,
+      "Combined ANOVA" = res$comb_anova,
+      "Over-Year ANOVA" = res$year_anova,
+      "AMMI IPCA" = res$ammi$ipca_summary,
+      "AMMI PC Scores" = res$ammi$pc_scores,
+      "AMMI Stability" = res$ammi$stability,
+      "WAASB Scores" = res$waasb$scores,
+      "BLUP Indices" = res$blup,
+      "Parametric SSI" = res$ssi$full,
+      "Culled SSI" = res$ssi$culled,
+      "Top 10 All Traits" = if (!is.null(batch)) batch$top_summary else NULL,
+      "Multi-Trait Index" = if (!is.null(batch)) batch$multi_trait_index else NULL,
+      "Batch Errors" = if (!is.null(batch)) batch$errors else NULL
+    )
+    tbl_map[[input$met_csv_table]]
+  }
+
+  output$met_download_csv <- downloadHandler(
+    filename = function() paste0("met-", gsub("[^a-z]+", "-", tolower(input$met_csv_table)), ".csv"),
+    content  = function(file) {
+      tbl <- table_for_download()
+      validate(need(!is.null(tbl), "Selected table is not available for this dataset."))
+      write.csv(tbl, file, row.names = FALSE)
+    }
+  )
+
+  output$met_download_xlsx <- downloadHandler(
+    filename = function() {
+      res <- current_result()
+      paste0("met-stability-", gsub("[^A-Za-z0-9]+", "-", res$trait), ".xlsx")
+    },
+    content = function(file) {
+      validate(need(requireNamespace("writexl", quietly = TRUE), "Install the writexl package to export XLSX files."))
+      res <- current_result()
+      batch <- batch_result()
+      tables <- if (!is.null(batch)) met_all_batch_result_tables(batch, res, include_all_traits = TRUE) else met_result_tables(res)
+      names(tables) <- met_safe_sheet_names(names(tables))
+      writexl::write_xlsx(tables, file)
+    }
+  )
+
+  output$met_download_report <- downloadHandler(
+    filename = function() "met-stability-report.html",
+    content  = function(file) {
+      req(current_result()); res <- current_result(); batch <- batch_result()
+      sections <- list(
+        list(title = "Analysis summary",                  text  = res$report_note),
+        list(title = "Genotype means",                    table = res$gen_means),
+        list(title = "Combined ANOVA",                    table = res$comb_anova),
+        list(title = "AMMI IPCA summary",                 table = res$ammi$ipca_summary),
+        list(title = "AMMI stability indices",            table = res$ammi$stability),
+        list(title = "WAASB / WAASBY scores",             table = res$waasb$scores),
+        list(title = "BLUP indices (HMGV, RPGV, HMRPGV)", table = res$blup),
+        list(title = "Parametric SSI",                    table = res$ssi$full),
+        list(title = "Culled SSI",                        table = res$ssi$culled)
+      )
+      if (!is.null(res$year_anova))
+        sections <- c(sections, list(list(title = "Over-Year ANOVA", table = res$year_anova)))
+      if (!is.null(batch)) {
+        sections <- c(sections, list(
+          list(title = "Top 10 genotypes across traits", table = batch$top_summary),
+          list(title = "Multi-trait top genotype summary", table = batch$multi_trait_index),
+          list(title = "Batch trait errors", table = batch$errors)
+        ))
+      }
+      save_html_report(paste("MET Stability Report -", res$trait), sections, file)
     }
   )
 }

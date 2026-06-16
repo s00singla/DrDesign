@@ -1,10 +1,41 @@
+register_report_downloads <- function(output, pdf_id, word_id, filename_base, params) {
+  output[[pdf_id]] <- downloadHandler(
+    filename = function() paste0(filename_base, ".pdf"),
+    content = function(file) {
+      render_parameterized_report(
+        output_file = file,
+        output_format = "pdf_document",
+        params = params()
+      )
+    }
+  )
+
+  output[[word_id]] <- downloadHandler(
+    filename = function() paste0(filename_base, ".docx"),
+    content = function(file) {
+      render_parameterized_report(
+        output_file = file,
+        output_format = "word_document",
+        params = params()
+      )
+    }
+  )
+}
+
+report_download_buttons <- function(pdf_id, word_id) {
+  tagList(
+    downloadButton(pdf_id, "Download PDF report"),
+    downloadButton(word_id, "Download Word report")
+  )
+}
+
 portal_ui <- function(catalog = app_catalog) {
   fluidPage(
     tags$head(tags$style(research_station_styles)),
     div(class = "station-hero", h1("Research Analytics Station"), p("Cloud-ready Shiny suite for agricultural and experimental data analysis."), nav_links("portal", catalog)),
     fluidRow(
       column(6, div(class = "station-card", h3("How researchers will use this suite"), p("Choose a module, upload CSV/XLSX data or paste a table, review assumptions, then export CSV tables, HTML reports, and randomized design plans where applicable."), tags$ul(tags$li("Public link access for v1."), tags$li("Shared validation and reporting patterns across modules."), tags$li("Deployment assets included for Docker, nginx, and Shiny Server.")))),
-      column(6, div(class = "station-card", h3("Support"), p("Version 1.0 deployment scaffold"), p("Recommended host: single cloud VM with Docker Compose."), p("Update this section with station support contacts before production."), p("Modules are linked below.")))
+      column(6, div(class = "station-card", h3("About Dr. Saurav Singla"), p("Dr. Saurav Singla, Asst. Prof. (Agri. Stat.); Ph.D. (Ag. Stat.) from BHU, Varanasi and M.Sc.(Ag.) in Stat from TNAU, Coimbatore; Qualified GATE Statistics, GATE DS&AI, ASRB NET, UGC-NET and contributed statistical part in lot of research papers."), p("Modules are linked below.")))
     ),
     fluidRow(lapply(catalog[-1], function(app) {
       column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, factorial CRD/RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.", "met-stability" = "Multi-environment trial stability analysis: AMMI, GGE, WAASB, WAASBY, BLUP-based stability indices, individual and combined ANOVA, and simultaneous selection indices.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
@@ -44,6 +75,7 @@ design_analyzer_ui <- function(nav_catalog = app_catalog) {
       actionButton("generate_layout", "Generate layout", class = "btn-primary"),
       tags$hr(),
       downloadButton("download_layout_csv", "Download allocation CSV"),
+      report_download_buttons("download_layout_pdf_report", "download_layout_word_report"),
       downloadButton("download_layout_report", "Download HTML report"),
       uiOutput("layout_error_msg")
     ),
@@ -147,6 +179,35 @@ design_analyzer_server <- function(input, output, session) {
       req(layout_plan())
       write.csv(layout_plan()$fieldbook, file, row.names = FALSE)
     }
+  )
+
+  layout_report_params <- reactive({
+    req(layout_plan())
+    plan <- layout_plan()
+    list(
+      report_title = "Design Layout Report",
+      design_name = plan$design,
+      alpha = NULL,
+      comparison_method = "Randomized layout",
+      summary_stats = plan$summary,
+      anova_table = plan$fieldbook,
+      dataset_preview = head(plan$fieldbook, 20),
+      inference_text = sprintf("Randomized %s layout generated with seed %s.", plan$design, input$seed),
+      report_note = sprintf("Design: %s | Seed: %s | Experimental units: %s", plan$design, input$seed, nrow(plan$fieldbook)),
+      extra_tables = list(
+        "Design Summary" = plan$summary,
+        "Allocation Table" = plan$fieldbook
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "download_layout_pdf_report",
+    "download_layout_word_report",
+    "design-layout-report",
+    layout_report_params
   )
 
   output$download_layout_report <- downloadHandler(
@@ -268,28 +329,12 @@ crd_rbd_server <- function(input, output, session) {
     }
   )
 
-  output$download_pdf_report <- downloadHandler(
-    filename = function() "crd-rbd-report.pdf",
-    content = function(file) {
-      req(analysis())
-      render_parameterized_report(
-        output_file = file,
-        output_format = "pdf_document",
-        params = report_params()
-      )
-    }
-  )
-
-  output$download_word_report <- downloadHandler(
-    filename = function() "crd-rbd-report.docx",
-    content = function(file) {
-      req(analysis())
-      render_parameterized_report(
-        output_file = file,
-        output_format = "word_document",
-        params = report_params()
-      )
-    }
+  register_report_downloads(
+    output,
+    "download_pdf_report",
+    "download_word_report",
+    "crd-rbd-report",
+    report_params
   )
 
 }
@@ -308,6 +353,7 @@ descriptive_statistics_ui <- function(nav_catalog = app_catalog) {
       actionButton("desc_analyze", "Run descriptive analysis", class = "btn-primary"),
       tags$hr(),
       downloadButton("download_desc_csv", "Download CSV"),
+      report_download_buttons("download_desc_pdf_report", "download_desc_word_report"),
       downloadButton("download_desc_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -378,6 +424,36 @@ descriptive_statistics_server <- function(input, output, session) {
     }
   )
 
+  desc_report_params <- reactive({
+    req(desc_analysis())
+    result <- desc_analysis()
+    list(
+      report_title = "Descriptive Statistics Report",
+      design_name = "Descriptive Statistics",
+      alpha = NULL,
+      comparison_method = input$analysis_type,
+      summary_stats = result$summary,
+      anova_table = result$by_group,
+      dataset_preview = head(result$dataset, 20),
+      inference_text = paste(result$normality, collapse = "\n"),
+      report_note = sprintf("Analysis type: %s", input$analysis_type),
+      plot_errorbar = result$plot_obj,
+      extra_tables = list(
+        "Summary Statistics" = result$summary,
+        "Group Summary" = result$by_group
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "download_desc_pdf_report",
+    "download_desc_word_report",
+    "descriptive-statistics-report",
+    desc_report_params
+  )
+
   output$download_desc_report <- downloadHandler(
     filename = function() "descriptive-statistics-report.html",
     content = function(file) {
@@ -410,6 +486,7 @@ compare_means_ui <- function(nav_catalog = app_catalog) {
       actionButton("tt_analyze", "Run t-test", class = "btn-primary"),
       tags$hr(),
       downloadButton("download_tt_csv", "Download CSV"),
+      report_download_buttons("download_tt_pdf_report", "download_tt_word_report"),
       downloadButton("download_tt_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -484,6 +561,38 @@ compare_means_server <- function(input, output, session) {
     }
   )
 
+  tt_report_params <- reactive({
+    req(tt_analysis())
+    result <- tt_analysis()
+    list(
+      report_title = "Compare Means Report",
+      design_name = "Compare Means",
+      alpha = NULL,
+      comparison_method = input$tt_type,
+      summary_stats = result$summary,
+      anova_table = result$test_result,
+      key_statistics = result$variance,
+      dataset_preview = head(result$dataset, 20),
+      inference_text = sprintf("Test type: %s", input$tt_type),
+      report_note = sprintf("Compare means workflow: %s", input$tt_type),
+      plot_errorbar = result$plot_obj,
+      extra_tables = list(
+        "Descriptive Summary" = result$summary,
+        "Variance Comparison" = result$variance,
+        "Test Result" = result$test_result
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "download_tt_pdf_report",
+    "download_tt_word_report",
+    "compare-means-report",
+    tt_report_params
+  )
+
   output$download_tt_report <- downloadHandler(
     filename = function() "compare-means-report.html",
     content = function(file) {
@@ -516,6 +625,7 @@ factorial_design_ui <- function(nav_catalog = app_catalog) {
       tags$hr(),
       selectInput("csv_table", "CSV table to download", choices = c("Long data", "ANOVA", "Key statistics", "Means", "LSD groups", "Factorial full ANOVA", "Factorial additive ANOVA", "Factorial emmeans interaction", "Factorial emmeans A", "Factorial emmeans B", "Factorial Tukey interaction", "Factorial CLD interaction", "Factorial diagnostics")),
       downloadButton("download_csv", "Download CSV"),
+      report_download_buttons("download_factorial_pdf_report", "download_factorial_word_report"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -601,6 +711,59 @@ factorial_design_server <- function(input, output, session) {
     }
   )
 
+  factorial_report_params <- reactive({
+    req(analysis())
+    result <- analysis()
+    fact <- result$factorial
+    list(
+      report_title = sprintf("%s Analysis Report", input$design),
+      design_name = input$design,
+      alpha = input$alpha,
+      comparison_method = result$comparison_method,
+      summary_stats = result$means,
+      anova_table = result$anova,
+      key_statistics = result$stats,
+      mean_table = fact$emmeans_interaction,
+      posthoc_summary = fact$tukey_interaction,
+      posthoc_table = fact$cld_interaction,
+      dataset_preview = head(result$dataset, 20),
+      inference_text = "The factorial design module reports full and additive models, estimated marginal means, Tukey comparisons, compact letter displays, and diagnostics.",
+      report_note = result$report_note,
+      plot_errorbar = fact$observed_interaction_plot,
+      extra_tables = list(
+        "Factorial Full ANOVA" = fact$full_anova,
+        "Factorial Additive ANOVA" = fact$additive_anova,
+        "Factorial Assumptions" = fact$assumptions,
+        "Estimated Means - Interaction" = fact$emmeans_interaction,
+        "Estimated Means - Factor A" = fact$emmeans_a,
+        "Estimated Means - Factor B" = fact$emmeans_b,
+        "Tukey Comparisons - Interaction" = fact$tukey_interaction,
+        "Compact Letter Display - Interaction" = fact$cld_interaction,
+        "Diagnostics" = fact$diagnostics
+      ),
+      extra_text_sections = list(
+        "Data Summary" = fact$data_summary,
+        "Final Model Summary" = fact$final_summary
+      ),
+      extra_plots = list(
+        "Boxplot" = fact$boxplot_obj,
+        "Observed Interaction Plot" = fact$observed_interaction_plot,
+        "Estimated Means Interaction Plot" = fact$emm_interaction_plot,
+        "Estimated Means - Factor A" = fact$emm_a_plot,
+        "Estimated Means - Factor B" = fact$emm_b_plot
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "download_factorial_pdf_report",
+    "download_factorial_word_report",
+    "factorial-design-report",
+    factorial_report_params
+  )
+
   output$download_report <- downloadHandler(
     filename = function() "factorial-design-report.html",
     content = function(file) {
@@ -633,6 +796,7 @@ pooled_anova_ui <- function(nav_catalog = app_catalog) {
       tags$hr(),
       selectInput("csv_table", "CSV table to download", choices = c("ANOVA", "Homogeneity", "Treatment means", "Season x treatment means")),
       downloadButton("download_csv", "Download CSV"),
+      report_download_buttons("download_pooled_pdf_report", "download_pooled_word_report"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -667,6 +831,40 @@ pooled_anova_server <- function(input, output, session) {
       table_map <- list("ANOVA" = analysis()$anova, "Homogeneity" = analysis()$homogeneity, "Treatment means" = analysis()$treatment_means, "Season x treatment means" = analysis()$season_treatment_means)
       write.csv(table_map[[input$csv_table]], file, row.names = FALSE)
     }
+  )
+
+  pooled_report_params <- reactive({
+    req(analysis())
+    result <- analysis()
+    list(
+      report_title = "Pooled ANOVA Report",
+      design_name = "Pooled ANOVA",
+      alpha = input$alpha,
+      comparison_method = "Bartlett homogeneity check",
+      summary_stats = result$treatment_means,
+      anova_table = result$anova,
+      key_statistics = result$homogeneity,
+      mean_table = result$season_treatment_means,
+      dataset_preview = head(result$dataset, 20),
+      inference_text = result$report_note,
+      report_note = result$report_note,
+      extra_tables = list(
+        "Homogeneity Check" = result$homogeneity,
+        "Season-wise Error Mean Square" = result$error_summary,
+        "Pooled ANOVA Table" = result$anova,
+        "Treatment Means" = result$treatment_means,
+        "Season x Treatment Means" = result$season_treatment_means
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "download_pooled_pdf_report",
+    "download_pooled_word_report",
+    "pooled-anova-report",
+    pooled_report_params
   )
 
   output$download_report <- downloadHandler(
@@ -1387,30 +1585,12 @@ split_plot_server <- function(input, output, session) {
     }
   )
 
-  output$download_split_pdf_report <- downloadHandler(
-    filename = function() "split-plot-report.pdf",
-    content = function(file) {
-      req(analysis())
-
-      render_parameterized_report(
-        output_file = file,
-        output_format = "pdf_document",
-        params = report_params()
-      )
-    }
-  )
-
-  output$download_split_word_report <- downloadHandler(
-    filename = function() "split-plot-report.docx",
-    content = function(file) {
-      req(analysis())
-
-      render_parameterized_report(
-        output_file = file,
-        output_format = "word_document",
-        params = report_params()
-      )
-    }
+  register_report_downloads(
+    output,
+    "download_split_pdf_report",
+    "download_split_word_report",
+    "split-plot-report",
+    report_params
   )
 
   output$download_report <- downloadHandler(
@@ -1464,6 +1644,7 @@ correlation_regression_ui <- function(nav_catalog = app_catalog) {
       selectInput("csv_table", "CSV table to download", choices = c("Correlation matrix", "Coefficients", "Fit statistics", "Diagnostics")),
       downloadButton("download_csv", "Download CSV"),
       downloadButton("download_corrplot", "Download correlation plot"),
+      report_download_buttons("download_corr_pdf_report", "download_corr_word_report"),
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
@@ -1589,6 +1770,40 @@ correlation_regression_server <- function(input, output, session) {
     }
   )
 
+  corr_report_params <- reactive({
+    req(analysis())
+    result <- analysis()
+    list(
+      report_title = "Correlation and Regression Report",
+      design_name = "Correlation & Regression",
+      alpha = input$corr_sig_level,
+      comparison_method = sprintf("Correlation plot: %s, %s, %s", input$corr_method, input$corr_type, input$corr_order),
+      summary_stats = result$fit,
+      anova_table = result$correlation,
+      key_statistics = result$coefficients,
+      mean_table = result$diagnostics,
+      dataset_preview = head(result$dataset, 20),
+      inference_text = result$report_note,
+      report_note = result$report_note,
+      extra_tables = list(
+        "Correlation Matrix" = result$correlation,
+        "Correlation P-values" = result$correlation_p,
+        "Regression Coefficients" = result$coefficients,
+        "Fit Statistics" = result$fit,
+        "Diagnostics" = result$diagnostics
+      ),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "download_corr_pdf_report",
+    "download_corr_word_report",
+    "correlation-regression-report",
+    corr_report_params
+  )
+
   output$download_report <- downloadHandler(
     filename = function() "correlation-regression-report.html",
     content = function(file) {
@@ -1660,6 +1875,7 @@ met_stability_ui <- function(nav_catalog = app_catalog) {
                               "Batch Errors")),
       downloadButton("met_download_csv",    "Download CSV"),
       downloadButton("met_download_xlsx",   "Download XLSX"),
+      report_download_buttons("met_download_pdf_report", "met_download_word_report"),
       downloadButton("met_download_report", "Download HTML Report"),
       uiOutput("met_error_msg")
     ),
@@ -2229,6 +2445,63 @@ met_stability_server <- function(input, output, session) {
       names(tables) <- met_safe_sheet_names(names(tables))
       writexl::write_xlsx(tables, file)
     }
+  )
+
+  met_report_params <- reactive({
+    req(current_result())
+    res <- current_result()
+    batch <- batch_result()
+    tables <- met_result_tables(res)
+    if (!is.null(batch)) {
+      tables <- c(
+        tables,
+        list(
+          "Top 10 All Traits" = batch$top_summary,
+          "Multi-Trait Index" = batch$multi_trait_index,
+          "Batch Errors" = batch$errors
+        )
+      )
+    }
+
+    genotype_plot <- NULL
+    if (!is.null(res$gen_means) && nrow(res$gen_means) > 0 && all(c("Genotype", "Mean") %in% names(res$gen_means))) {
+      gm <- res$gen_means
+      genotype_plot <- ggplot2::ggplot(gm, ggplot2::aes(x = stats::reorder(Genotype, Mean), y = Mean, fill = Mean)) +
+        ggplot2::geom_col(alpha = 0.9) +
+        ggplot2::coord_flip() +
+        ggplot2::scale_fill_gradient(low = "#a8d5a2", high = "#1f4d3b") +
+        ggplot2::theme_minimal(base_size = 12) +
+        ggplot2::theme(legend.position = "none") +
+        ggplot2::labs(title = paste("Genotype means for", res$trait), x = "Genotype", y = "Mean")
+    }
+
+    list(
+      report_title = paste("MET Stability Report -", res$trait),
+      design_name = "MET Stability",
+      alpha = input$met_alpha,
+      comparison_method = res$direction_label,
+      summary_stats = res$gen_means,
+      anova_table = res$comb_anova,
+      key_statistics = res$waasb$scores,
+      mean_table = res$blup,
+      posthoc_summary = res$ssi$full,
+      posthoc_table = res$ssi$culled,
+      dataset_preview = head(res$dataset, 20),
+      inference_text = res$report_note,
+      report_note = res$report_note,
+      plot_errorbar = genotype_plot,
+      extra_tables = tables,
+      extra_text_sections = list("Model Notes" = res$warnings),
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+
+  register_report_downloads(
+    output,
+    "met_download_pdf_report",
+    "met_download_word_report",
+    "met-stability-report",
+    met_report_params
   )
 
   output$met_download_report <- downloadHandler(

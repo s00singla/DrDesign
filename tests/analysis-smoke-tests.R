@@ -1,19 +1,115 @@
+required_pkgs <- c(
+  "shiny", "htmltools", "readxl", "dplyr", "tidyr", "agricolae",
+  "desplot", "ggplot2", "emmeans", "multcomp", "multcompView",
+  "car", "lme4", "lmerTest", "DT"
+)
+missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  stop("Missing packages required for analysis smoke tests: ", paste(missing_pkgs, collapse = ", "))
+}
+
 source("R/shared.R", local = TRUE)
 source("R/analysis.R", local = TRUE)
 source("R/met_analysis.R", local = TRUE)
+source("R/app_builders.R", local = TRUE)
 
-design_result <- run_design_analysis(read_pasted_table(default_data[["CRD"]]), "CRD", alpha = 0.05)
-stopifnot(nrow(design_result$anova) >= 2)
-stopifnot(identical(design_result$comparison_method, "LSD"))
-stopifnot(nrow(design_result$treatment_summary) >= 1)
+assert_table <- function(x, min_rows = 1, label = deparse(substitute(x))) {
+  stopifnot(is.data.frame(x))
+  if (nrow(x) < min_rows) {
+    stop(label, " returned fewer than ", min_rows, " row(s).", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+check_layout <- function(design, expected_rows, ...) {
+  result <- run_design_layout(design, seed = 7, ...)
+  assert_table(result$summary, label = paste(design, "summary"))
+  assert_table(result$fieldbook, expected_rows, paste(design, "fieldbook"))
+  stopifnot(nrow(result$fieldbook) == expected_rows)
+  stopifnot(is.data.frame(result$plot_data))
+  result
+}
+
+check_design_analysis <- function(design, data_text, ...) {
+  result <- run_design_analysis(read_pasted_table(data_text), design, ...)
+  assert_table(result$dataset, label = paste(design, "dataset"))
+  assert_table(result$anova, label = paste(design, "ANOVA"))
+  assert_table(result$stats, label = paste(design, "statistics"))
+  assert_table(result$means, label = paste(design, "means"))
+  assert_table(result$groups, label = paste(design, "groups"))
+  result
+}
+
+check_layout("CRD", 12, trt = 4, rep = 3)
+check_layout("RBD", 12, trt = 4, rep = 3)
+
+factorial_crd_layout <- check_layout("Factorial CRD", 12, factor_a_trt = 2, factor_b_trt = 3, rep = 2)
+stopifnot(all(c("FactorA", "FactorB", "Treatment") %in% names(factorial_crd_layout$fieldbook)))
+stopifnot(length(unique(factorial_crd_layout$fieldbook$Treatment)) == 6)
+
+factorial_rbd_layout <- check_layout("Factorial RBD", 18, factor_a_trt = 2, factor_b_trt = 3, rep = 3)
+stopifnot(all(c("FactorA", "FactorB", "Treatment") %in% names(factorial_rbd_layout$fieldbook)))
+stopifnot(length(unique(factorial_rbd_layout$fieldbook$Treatment)) == 6)
+
+check_layout("Split Plot", 27, rep = 3, main_trt = 3, sub_trt = 3)
+check_layout("Strip Plot", 27, rep = 3, main_trt = 3, sub_trt = 3)
+check_layout("Augmented RCBD", 15, rep = 3, checks = 3, test_trt = 6)
+
+crd_result <- check_design_analysis("CRD", default_data[["CRD"]], alpha = 0.05, comparison_method = "LSD")
+stopifnot(identical(crd_result$comparison_method, "LSD"))
+assert_table(crd_result$treatment_summary, label = "CRD treatment summary")
+
+rbd_result <- check_design_analysis("RBD", default_data[["RBD"]], alpha = 0.05, comparison_method = "Tukey")
+stopifnot(identical(rbd_result$comparison_method, "Tukey"))
+assert_table(rbd_result$treatment_summary, label = "RBD treatment summary")
+
+factorial_crd <- check_design_analysis("Factorial CRD", default_data[["Factorial CRD"]], levels_a = 2, levels_b = 2, alpha = 0.05)
+stopifnot(is.list(factorial_crd$factorial))
+assert_table(factorial_crd$factorial$full_anova, label = "Factorial CRD full ANOVA")
+assert_table(factorial_crd$factorial$emmeans_interaction, label = "Factorial CRD emmeans")
+
+factorial_rbd <- check_design_analysis("Factorial RBD", default_data[["Factorial RBD"]], levels_a = 2, levels_b = 2, alpha = 0.05)
+stopifnot(is.list(factorial_rbd$factorial))
+assert_table(factorial_rbd$factorial$full_anova, label = "Factorial RBD full ANOVA")
+assert_table(factorial_rbd$factorial$emmeans_interaction, label = "Factorial RBD emmeans")
+
+desc_result <- run_descriptive_analysis(
+  read_pasted_table(default_data[["Descriptive Statistics"]]),
+  analysis_type = "summary"
+)
+assert_table(desc_result$summary, label = "Descriptive summary")
+
+desc_group_result <- run_descriptive_analysis(
+  read_pasted_table(default_data[["Descriptive Statistics"]]),
+  analysis_type = "sumbygrp",
+  selected_vars = c("Yield", "Height"),
+  group_var = "Group"
+)
+assert_table(desc_group_result$by_group, label = "Descriptive group summary")
+
+tt_data <- read_pasted_table(default_data[["Compare Means"]])
+tt_one <- run_ttest_analysis(tt_data, "one-sample", value_var = "Value", mu = 0)
+assert_table(tt_one$test_result, label = "One-sample t-test")
+
+tt_two <- run_ttest_analysis(tt_data, "two-sample", value_var = "Value", group_var = "Group")
+assert_table(tt_two$test_result, label = "Two-sample t-test")
+
+tt_welch <- run_ttest_analysis(tt_data, "welch", value_var = "Value", group_var = "Group")
+assert_table(tt_welch$test_result, label = "Welch t-test")
+
+paired_data <- data.frame(Before = c(10.1, 11.3, 9.8, 12.2), After = c(11.0, 12.0, 10.4, 12.8))
+tt_paired <- run_ttest_analysis(paired_data, "paired", value_var = "Before", pair_left = "Before", pair_right = "After")
+assert_table(tt_paired$test_result, label = "Paired t-test")
 
 pooled_result <- run_pooled_anova(read_pasted_table(pooled_example), alpha = 0.05)
-stopifnot(nrow(pooled_result$anova) >= 3)
+assert_table(pooled_result$anova, 3, "Pooled ANOVA")
+assert_table(pooled_result$homogeneity, label = "Pooled homogeneity")
+assert_table(pooled_result$error_summary, label = "Pooled error summary")
 
 split_result <- run_split_plot(read_pasted_table(split_plot_example), alpha = 0.05)
-stopifnot(nrow(split_result$emmeans_interaction) >= 1)
-stopifnot(nrow(split_result$split_anova) >= 1)
-stopifnot(nrow(split_result$split_lsd_cv) >= 1)
+assert_table(split_result$emmeans_interaction, label = "Split emmeans interaction")
+assert_table(split_result$split_anova, label = "Split ANOVA")
+assert_table(split_result$split_lsd_cv, label = "Split LSD/CV")
 stopifnot(!is.null(split_result$random_effects))
 stopifnot(split_result$random_effect_column %in% names(split_result$random_effects))
 
@@ -31,25 +127,12 @@ custom_split_result <- run_split_plot(
   response_var = "Yield",
   alpha = 0.05
 )
-stopifnot(nrow(custom_split_result$split_anova) >= 1)
-stopifnot(nrow(custom_split_result$split_lsd_cv) >= 1)
+assert_table(custom_split_result$split_anova, label = "Custom split ANOVA")
+assert_table(custom_split_result$split_lsd_cv, label = "Custom split LSD/CV")
 
 cor_result <- run_correlation_regression(read_pasted_table(correlation_example), "Yield", c("Rainfall", "Nitrogen"))
-stopifnot(nrow(cor_result$coefficients) >= 2)
-stopifnot(nrow(cor_result$correlation_p) >= 2)
-
-layout_result <- run_design_layout("RBD", seed = 7, trt = 4, rep = 3)
-stopifnot(nrow(layout_result$fieldbook) == 12)
-
-factorial_crd_layout <- run_design_layout("Factorial CRD", seed = 7, factor_a_trt = 2, factor_b_trt = 3, rep = 2)
-stopifnot(nrow(factorial_crd_layout$fieldbook) == 12)
-stopifnot(all(c("FactorA", "FactorB", "Treatment") %in% names(factorial_crd_layout$fieldbook)))
-stopifnot(length(unique(factorial_crd_layout$fieldbook$Treatment)) == 6)
-
-factorial_rbd_layout <- run_design_layout("Factorial RBD", seed = 7, factor_a_trt = 2, factor_b_trt = 3, rep = 3)
-stopifnot(nrow(factorial_rbd_layout$fieldbook) == 18)
-stopifnot(all(c("FactorA", "FactorB", "Treatment") %in% names(factorial_rbd_layout$fieldbook)))
-stopifnot(length(unique(factorial_rbd_layout$fieldbook$Treatment)) == 6)
+assert_table(cor_result$coefficients, 2, "Correlation regression coefficients")
+assert_table(cor_result$correlation_p, 2, "Correlation p-values")
 
 fake_met_result <- function(trait) {
   simple_table <- data.frame(GEN = c("G1", "G2"), Value = c(1, 2), stringsAsFactors = FALSE)
@@ -107,6 +190,7 @@ stopifnot(identical(met_select_cached_result(met_cached_payload, "Missing")$trai
 stopifnot(!met_signature_changed(met_signature_a, met_signature_a))
 stopifnot(met_signature_changed(met_signature_a, met_signature_b))
 stopifnot(grepl("switching traits does not rerun analysis", met_payload_status_text(met_cached_payload, "DPM"), fixed = TRUE))
+
 met_cached_tables <- met_all_batch_result_tables(met_cached_payload$batch, met_cached_payload$batch$results$Yield, include_all_traits = TRUE)
 stopifnot(length(met_cached_tables) > 3)
 stopifnot(all(vapply(met_cached_tables, is.data.frame, logical(1))))
@@ -147,8 +231,8 @@ if (all(vapply(met_pkgs, requireNamespace, logical(1), quietly = TRUE))) {
     direction = "l"
   )
 
-  stopifnot(nrow(met_high$gen_means) >= 3)
-  stopifnot(nrow(met_high$comb_anova) >= 1)
+  assert_table(met_high$gen_means, 3, "MET genotype means")
+  assert_table(met_high$comb_anova, label = "MET combined ANOVA")
   stopifnot(is.data.frame(met_high$ammi$ipca_summary) || length(met_high$warnings) >= 0)
   stopifnot(is.data.frame(met_high$waasb$scores) || length(met_high$warnings) >= 0)
   stopifnot(is.data.frame(met_high$blup))
@@ -177,7 +261,7 @@ if (all(vapply(met_pkgs, requireNamespace, logical(1), quietly = TRUE))) {
     stopifnot(file.exists(met_xlsx))
   }
 } else {
-  message("Skipping MET smoke tests; missing packages: ", paste(met_pkgs[!vapply(met_pkgs, requireNamespace, logical(1), quietly = TRUE)], collapse = ", "))
+  message("Skipping MET model smoke tests; missing packages: ", paste(met_pkgs[!vapply(met_pkgs, requireNamespace, logical(1), quietly = TRUE)], collapse = ", "))
 }
 
-cat("All smoke tests passed.\n")
+cat("All analysis smoke tests passed.\n")

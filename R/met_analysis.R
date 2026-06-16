@@ -105,7 +105,7 @@ sig_stars <- function(p) {
           ifelse(p < 0.1, ".", "ns")))))
 }
 
-format_anova_table <- function(av) {
+met_format_anova_table <- function(av) {
   av <- as.data.frame(av, stringsAsFactors = FALSE)
   av$Source <- rownames(av)
   rownames(av) <- NULL
@@ -156,7 +156,7 @@ compute_individual_anovas <- function(dat, alpha = 0.05) {
     tryCatch({
       n_rep <- nlevels(sub$REP)
       mod <- if (n_rep > 1) stats::lm(Y ~ GEN + REP, data = sub) else stats::lm(Y ~ GEN, data = sub)
-      out <- format_anova_table(stats::anova(mod))
+      out <- met_format_anova_table(stats::anova(mod))
       error_ms <- out$MS[out$Source == "Residuals"]
       grand_mean <- mean(sub$Y, na.rm = TRUE)
       cv_pct <- if (length(error_ms) == 1 && !is.na(error_ms) && abs(grand_mean) > 0) {
@@ -182,7 +182,7 @@ compute_combined_anova <- function(dat, alpha = 0.05) {
       data = dat,
       control = lme4::lmerControl(optimizer = "bobyqa")
     )
-    out <- format_anova_table(stats::anova(mod))
+    out <- met_format_anova_table(stats::anova(mod))
     vc <- as.data.frame(lme4::VarCorr(mod))
     error_var <- vc$vcov[vc$grp == "Residual"]
     grand_mean <- mean(dat$Y, na.rm = TRUE)
@@ -216,7 +216,7 @@ compute_year_anova <- function(dat, alpha = 0.05) {
       data = dat,
       control = lme4::lmerControl(optimizer = "bobyqa")
     )
-    format_anova_table(stats::anova(mod))
+    met_format_anova_table(stats::anova(mod))
   }, error = function(e) {
     data.frame(Source = "Error", df = NA, Den_df = NA, SS = NA, MS = NA,
                F_value = NA, Pr_F = NA, Sig = conditionMessage(e),

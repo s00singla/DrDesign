@@ -1,0 +1,59 @@
+---
+title: "`r params$report_title`"
+header-includes:
+  - \usepackage{longtable,booktabs,array}
+output:
+  pdf_document:
+    toc: true
+  word_document:
+    toc: true
+params:
+  report_title: "Research Report"
+  design_name: NULL
+  alpha: NULL
+  comparison_method: NULL
+  summary_stats: NULL
+  dataset_preview: NULL
+  report_note: NULL
+  extra_tables: NULL
+  extra_text_sections: NULL
+  extra_plots: NULL
+  generated_at: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+`r params$report_note`
+
+Generated: `r params$generated_at`
+
+`r reporting_note()`
+
+```{r notes, results='asis'}
+for (name in names(params$extra_text_sections)) {
+  cat("\n\n# ",name,"\n\n",sep="")
+  values <- params$extra_text_sections[[name]]
+  if (!length(values)) cat("No additional notes.\n") else {
+    cat("\n\n",paste(values,collapse="\n\n"),"\n\n",sep="")
+  }
+}
+```
+
+```{r tables, results='asis'}
+for (name in names(params$extra_tables)) {
+  x <- params$extra_tables[[name]]
+  cat("\n\n# ",name,"\n\n",sep="")
+  if (!nrow(x) || !ncol(x)) {cat("No rows to report.\n");next}
+  report_kable(x)
+}
+```
+
+```{r figures, results='asis', fig.width=7, fig.height=5}
+for (name in names(params$extra_plots)) {
+  cat("\n\n# ",name,"\n\n",sep="")
+  plot <- params$extra_plots[[name]]
+  if(is.function(plot)) plot() else print(plot)
+}
+```

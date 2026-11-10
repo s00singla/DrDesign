@@ -1,0 +1,70 @@
+---
+title: "Incomplete-Block Trials"
+output:
+  html_document:
+    toc: true
+---
+
+Recover genotype information across small blocks
+
+## Question and data
+Provide Genotype, Rep, Block and numeric traits. Every genotype must occur once in each complete replicate; incomplete blocks must be equal-sized and smaller than a replicate.
+
+## Reporting and assumptions
+Replication is fixed and incomplete blocks within replication are random. Choose fixed genotypes for adjusted means or random genotypes for BLUPs. Report the model, variance components and any boundary diagnostics.
+
+The simple balanced-RCBD entry-mean heritability and advance formulas are deliberately unavailable here. Conditional BLUP-effect intervals hold fitted variance components fixed.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## incomplete-random
+
+Synthetic teaching data.
+
+```{r incomplete-random, message=FALSE, warning=TRUE}
+data <- research_example("incomplete-block")
+result <- run_genetic_variability(data,"Yield",incomplete=TRUE,genotype_random=TRUE)
+```
+
+```{r incomplete-random-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r incomplete-random-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## incomplete-fixed
+
+Synthetic teaching data.
+
+```{r incomplete-fixed, message=FALSE, warning=TRUE}
+data <- research_example("incomplete-block")
+result <- run_genetic_variability(data,"Yield",incomplete=TRUE,genotype_random=FALSE)
+```
+
+```{r incomplete-fixed-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r incomplete-fixed-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

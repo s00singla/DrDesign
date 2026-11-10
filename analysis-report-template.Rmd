@@ -1,5 +1,7 @@
 ---
 title: "`r if (is.null(params$report_title) || identical(params$report_title, '')) 'Experimental Analysis Report' else params$report_title`"
+header-includes:
+  - \usepackage{longtable,booktabs,array}
 output:
   pdf_document:
     toc: true
@@ -28,7 +30,7 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, results = 'asis')
 
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0 || identical(x, "")) y else x
@@ -40,12 +42,7 @@ has_rows <- function(x) {
 
 render_table <- function(x, caption, fallback = "No data available for this section.") {
   if (has_rows(x)) {
-    print(knitr::kable(
-      x,
-      caption = caption,
-      booktabs = knitr::is_latex_output(),
-      longtable = knitr::is_latex_output()
-    ))
+    report_kable(x, caption)
   } else {
     cat(fallback)
   }
@@ -55,12 +52,14 @@ render_text_block <- function(x, fallback = "No text was supplied for this secti
   if (is.null(x) || length(x) == 0) {
     cat(fallback)
   } else {
-    cat("\n\n```text\n")
-    cat(paste(as.character(x), collapse = "\n"))
-    cat("\n```\n")
+    cat("\n\n", paste(as.character(x), collapse = "\n\n"), "\n\n")
   }
 }
 ```
+
+# Reporting conventions
+
+`r reporting_note()`
 
 # Report Overview
 
@@ -78,7 +77,7 @@ overview <- data.frame(
   stringsAsFactors = FALSE
 )
 
-print(knitr::kable(overview, caption = "Analysis Metadata", booktabs = knitr::is_latex_output()))
+report_kable(overview, caption = "Analysis Metadata")
 ```
 
 # Dataset Preview
@@ -91,60 +90,12 @@ render_table(
 )
 ```
 
-# Treatment Summary
-
-```{r treatment-summary}
-render_table(
-  params$summary_stats,
-  "Treatment Summary",
-  "No treatment summary was supplied."
-)
-```
-
-# ANOVA Summary
-
-```{r anova-table}
-render_table(
-  params$anova_table,
-  "ANOVA Table",
-  "No ANOVA table was supplied."
-)
-```
-
-# Key Statistics
-
-```{r key-statistics}
-render_table(
-  params$key_statistics,
-  "Key Statistics",
-  "No key statistics were supplied."
-)
-```
-
-# Means and Post-hoc Comparison
-
-```{r means-table}
-render_table(
-  params$mean_table,
-  "Treatment Means",
-  "No treatment mean table was supplied."
-)
-```
-
-```{r posthoc-summary}
-render_table(
-  params$posthoc_summary,
-  "Post-hoc Summary",
-  "No post-hoc summary table was supplied."
-)
-```
-
-```{r posthoc-groups}
-render_table(
-  params$posthoc_table,
-  "Post-hoc Grouping",
-  "No post-hoc grouping table was supplied."
-)
+```{r analysis-tables}
+tables <- legacy_report_tables(params)
+for (section_name in names(tables)) {
+  cat("\n\n# ", section_name, "\n\n", sep = "")
+  render_table(tables[[section_name]], section_name)
+}
 ```
 
 # Interpretation
@@ -158,15 +109,6 @@ if (inherits(params$plot_errorbar, "ggplot")) {
   print(params$plot_errorbar)
 } else {
   cat("No ggplot object was supplied from the app.")
-}
-```
-
-```{r extra-tables, results='asis'}
-if (is.list(params$extra_tables) && length(params$extra_tables) > 0) {
-  for (section_name in names(params$extra_tables)) {
-    cat("\n\n# ", section_name, "\n\n", sep = "")
-    render_table(params$extra_tables[[section_name]], section_name)
-  }
 }
 ```
 
@@ -186,6 +128,8 @@ if (is.list(params$extra_plots) && length(params$extra_plots) > 0) {
     plot_obj <- params$extra_plots[[plot_name]]
     if (inherits(plot_obj, "ggplot")) {
       print(plot_obj)
+    } else if (is.function(plot_obj)) {
+      plot_obj()
     } else {
       cat("No ggplot object was supplied for this section.")
     }

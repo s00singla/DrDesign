@@ -1,0 +1,154 @@
+---
+title: "Descriptive Statistics"
+output:
+  html_document:
+    toc: true
+---
+
+Describe the observations before modelling
+
+## Question and data
+Select numeric traits and, if appropriate, a grouping variable. The examples cover overall and grouped summaries, boxplots, histograms, Q–Q plots and Shapiro–Wilk normality checks.
+
+## Reporting and assumptions
+Report the number of observations, mean, sample SD and observed range for each trait or group. State units. SD describes dispersion of observations; it is not the SE of a mean.
+
+Normality of raw observations is not the same as normality of model residuals. A nonsignificant Shapiro–Wilk result does not prove normality. Missing observations must first be reviewed in Data Preparation.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## descriptive-summary
+
+Synthetic teaching data.
+
+```{r descriptive-summary, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Descriptive Statistics"]])
+result <- run_descriptive_analysis(data,"summary",c("Yield","Height"),"Group")
+```
+
+```{r descriptive-summary-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r descriptive-summary-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## descriptive-sumbygrp
+
+Synthetic teaching data.
+
+```{r descriptive-sumbygrp, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Descriptive Statistics"]])
+result <- run_descriptive_analysis(data,"sumbygrp",c("Yield","Height"),"Group")
+```
+
+```{r descriptive-sumbygrp-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r descriptive-sumbygrp-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## descriptive-boxplot
+
+Synthetic teaching data.
+
+```{r descriptive-boxplot, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Descriptive Statistics"]])
+result <- run_descriptive_analysis(data,"boxplot",c("Yield","Height"),"Group")
+```
+
+```{r descriptive-boxplot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r descriptive-boxplot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## descriptive-histogram
+
+Synthetic teaching data.
+
+```{r descriptive-histogram, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Descriptive Statistics"]])
+result <- run_descriptive_analysis(data,"histogram",c("Yield","Height"),"Group")
+```
+
+```{r descriptive-histogram-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r descriptive-histogram-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## descriptive-qqplot
+
+Synthetic teaching data.
+
+```{r descriptive-qqplot, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Descriptive Statistics"]])
+result <- run_descriptive_analysis(data,"qqplot",c("Yield","Height"),"Group")
+```
+
+```{r descriptive-qqplot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r descriptive-qqplot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## descriptive-nt
+
+Synthetic teaching data.
+
+```{r descriptive-nt, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Descriptive Statistics"]])
+result <- run_descriptive_analysis(data,"nt",c("Yield","Height"),"Group")
+```
+
+```{r descriptive-nt-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r descriptive-nt-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

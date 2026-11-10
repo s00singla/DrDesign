@@ -1,0 +1,5 @@
+"Metric","Value"
+"Residual median-centred Levene F","7.82266946671989e+29"
+"df","1"
+"p-value","1.41006402317059e-88"
+"Interpretation","Diagnostic only: inspect residuals and experimental design before pooling."

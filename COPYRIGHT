@@ -1,0 +1,10 @@
+DrDesign
+Copyright (C) 2026 Saurav Singla
+
+DrDesign is an original R/Shiny implementation authored and owned by Saurav
+Singla. It is distributed under the GNU General Public License version 3.
+
+The copyright claim for DrDesign excludes third-party R packages, system
+libraries, fonts, tools, generated outputs, and the separately distributed
+grapesAgri1 project. Those materials remain subject to their own copyright and
+licence terms.

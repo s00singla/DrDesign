@@ -106,6 +106,58 @@ assert_table(pooled_result$anova, 3, "Pooled ANOVA")
 assert_table(pooled_result$homogeneity, label = "Pooled homogeneity")
 assert_table(pooled_result$error_summary, label = "Pooled error summary")
 
+pooled_split_data <- read_pasted_table(pooled_split_plot_example)
+pooled_split_result <- run_pooled_split_plot(pooled_split_data, include_pwpp = FALSE)
+assert_table(pooled_split_result$anova, label = "Pooled split ANOVA")
+assert_table(pooled_split_result$cd_summary, 4, "Pooled split CD summary")
+assert_table(pooled_split_result$lsd_main, label = "Pooled split main LSD")
+assert_table(pooled_split_result$lsd_sub, label = "Pooled split subplot LSD")
+assert_table(pooled_split_result$lsd_interaction, label = "Pooled split interaction LSD")
+assert_table(pooled_split_result$lsd_sub_within_main, label = "Pooled split subplot within main LSD")
+assert_table(pooled_split_result$lsd_main_within_sub, label = "Pooled split main within subplot LSD")
+stopifnot(is.null(pooled_split_result$pwpp_plot))
+stopifnot(all.equal(
+  pooled_split_result$lsd_interaction$CD,
+  stats::qt(1 - 0.05 / 2, pooled_split_result$lsd_interaction$df) * pooled_split_result$lsd_interaction$SE,
+  tolerance = 1e-10
+))
+
+custom_pooled_split <- pooled_split_data
+names(custom_pooled_split) <- c("Season", "Block", "Moisture", "Phosphorus", "SeedYield")
+custom_pooled_split_result <- run_pooled_split_plot(
+  custom_pooled_split,
+  year_var = "Season",
+  rep_var = "Block",
+  mainplot_var = "Moisture",
+  subplot_var = "Phosphorus",
+  response_var = "SeedYield",
+  include_pwpp = TRUE
+)
+stopifnot(inherits(custom_pooled_split_result$pwpp_plot, "ggplot"))
+
+expect_pooled_split_error <- function(data, pattern, ...) {
+  message <- tryCatch(
+    {
+      run_pooled_split_plot(data, ...)
+      NULL
+    },
+    error = conditionMessage
+  )
+  stopifnot(!is.null(message), grepl(pattern, message, fixed = TRUE))
+}
+
+expect_pooled_split_error(pooled_split_data[, -1], "was not found")
+expect_pooled_split_error(pooled_split_data[c(1, seq_len(nrow(pooled_split_data))), ], "must occur exactly once")
+expect_pooled_split_error(pooled_split_data[-1, ], "Data must be balanced")
+single_year_pooled_split <- subset(pooled_split_data, Year == "2023")
+expect_pooled_split_error(single_year_pooled_split, "at least two years")
+single_rep_pooled_split <- subset(pooled_split_data, Rep == "R1")
+expect_pooled_split_error(single_rep_pooled_split, "at least two replications")
+single_main_pooled_split <- subset(pooled_split_data, MainPlot == "M1")
+expect_pooled_split_error(single_main_pooled_split, "two levels of each treatment factor")
+unequal_levels_pooled_split <- subset(pooled_split_data, !(Year == "2023" & MainPlot == "M2"))
+expect_pooled_split_error(unequal_levels_pooled_split, "same MainPlot and SubPlot treatment levels")
+
 split_result <- run_split_plot(read_pasted_table(split_plot_example), alpha = 0.05)
 assert_table(split_result$emmeans_interaction, label = "Split emmeans interaction")
 assert_table(split_result$split_anova, label = "Split ANOVA")
@@ -233,8 +285,8 @@ if (all(vapply(met_pkgs, requireNamespace, logical(1), quietly = TRUE))) {
 
   assert_table(met_high$gen_means, 3, "MET genotype means")
   assert_table(met_high$comb_anova, label = "MET combined ANOVA")
-  stopifnot(is.data.frame(met_high$ammi$ipca_summary) || length(met_high$warnings) >= 0)
-  stopifnot(is.data.frame(met_high$waasb$scores) || length(met_high$warnings) >= 0)
+  assert_table(met_high$ammi$ipca_summary, label = "MET AMMI IPCA")
+  assert_table(met_high$waasb$scores, label = "MET WAASB scores")
   stopifnot(is.data.frame(met_high$blup))
   stopifnot(!is.null(met_high$ssi))
   stopifnot(!identical(as.character(met_high$gen_means$GEN[1]), as.character(met_low$gen_means$GEN[1])))

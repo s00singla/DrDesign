@@ -1,0 +1,70 @@
+---
+title: "Data Preparation & Trial Validation"
+output:
+  html_document:
+    toc: true
+---
+
+Start with the experimental unit
+
+## Question and data
+A row should represent a recorded experimental unit. Choose the trait columns and the identifiers that together identify that unit. Replication-wide tables can be converted to long format.
+
+## Reporting and assumptions
+Inspect the validation summary and repeated-identifier table before fitting a model. Repeated identifiers may be subsamples, not additional independent replications. The exclusion ledger is part of the analysis record.
+
+Review omissions explicitly. This tool does not decide whether an outlier is erroneous and does not impute missing observations.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## data-preparation
+
+Synthetic teaching data.
+
+```{r data-preparation, message=FALSE, warning=TRUE}
+data <- research_example("data-preparation")
+result <- run_data_preparation(data,c("Yield","Height"),c("Genotype","Rep"))
+```
+
+```{r data-preparation-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r data-preparation-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## wide-to-long
+
+Synthetic teaching data.
+
+```{r wide-to-long, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data$RBD)
+result <- run_data_preparation(data,c("Rep1","Rep2","Rep3"),"trt",wide=TRUE)
+```
+
+```{r wide-to-long-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r wide-to-long-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

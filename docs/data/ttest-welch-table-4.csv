@@ -1,0 +1,2 @@
+"Contrast","Estimate","SE","df","t","P","LowerCI","UpperCI","Method"
+"Control minus Treatment",-2.76666666666667,0.555777733351103,3.82196726175758,-4.97800919440376,0.008558556404843,-4.3385183610871,-1.19481497224624,"Welch Two Sample t-test"

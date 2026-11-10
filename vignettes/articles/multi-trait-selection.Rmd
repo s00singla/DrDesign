@@ -1,0 +1,70 @@
+---
+title: "Multi-Trait Selection"
+output:
+  html_document:
+    toc: true
+---
+
+Make the ideotype and weights explicit
+
+## Question and data
+Supply one row per genotype and numeric trait columns. Specify traits where lower is desirable, the weights and the selected percentage; confirm the direction choices before running.
+
+## Reporting and assumptions
+Weighted scores average signed standardized traits. MGIDI instead uses a factor model and distance to an ideotype. Report the chosen method and weights. The selection cutoff uses ceiling(n × percentage/100), retaining all ties.
+
+The methods are not interchangeable. Selection differentials describe the input matrix, whether it contains observed means, adjusted means or BLUPs; they are not promised genetic gain.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## selection-weighted
+
+Synthetic teaching data.
+
+```{r selection-weighted, message=FALSE, warning=TRUE}
+data <- research_example("multi-trait-selection")
+result <- run_multi_trait_selection(data,c("Yield","Height","Maturity"),lower_traits="Maturity",method="weighted")
+```
+
+```{r selection-weighted-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r selection-weighted-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## selection-mgidi
+
+Synthetic teaching data.
+
+```{r selection-mgidi, message=FALSE, warning=TRUE}
+data <- research_example("multi-trait-selection")
+result <- run_multi_trait_selection(data,c("Yield","Height","Maturity"),lower_traits="Maturity",method="mgidi")
+```
+
+```{r selection-mgidi-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r selection-mgidi-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

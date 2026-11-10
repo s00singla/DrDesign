@@ -1,0 +1,49 @@
+---
+title: "Genetic Variability & Heritability"
+output:
+  html_document:
+    toc: true
+---
+
+Distinguish plot and entry-mean heritability
+
+## Question and data
+Use replicated single-environment genotype observations. Genotype is random and replication fixed. Multiple selected traits share the reviewed complete-case set.
+
+## Reporting and assumptions
+For balanced RCBD, genetic variance equals (MSgenotype − MSerror)/r when the REML solution is interior. Entry-mean H² is σg²/(σg² + σe²/r); conditional plot H² uses σg²/(σg² + σe²). Report the scale explicitly. Predicted means average fixed replication effects equally.
+
+CVs require a positive trait mean. Genetic advance is a model-based expectation at the chosen selection intensity, not observed realized gain. BLUP intervals describe conditional genotypic effects, not uncertainty of the absolute predicted mean.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## genetic
+
+Synthetic teaching data.
+
+```{r genetic, message=FALSE, warning=TRUE}
+data <- research_example("genetic-variability")
+result <- run_genetic_variability(data,c("Yield","Height"))
+```
+
+```{r genetic-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r genetic-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

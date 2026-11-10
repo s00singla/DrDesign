@@ -1,0 +1,70 @@
+---
+title: "Correlation & Regression"
+output:
+  html_document:
+    toc: true
+---
+
+Separate association from prediction
+
+## Question and data
+Choose a numeric response and one or more numeric predictors. The examples show simple and multiple regression, using one reviewed common observation set for the model and correlation matrix.
+
+## Reporting and assumptions
+Report coefficients with SE, t and p-value, R², adjusted R², residual SD and the fitted model. Inspect residuals, linearity and the relevance of predictors. Correlation-matrix tests are unadjusted pairwise Pearson tests.
+
+Correlation does not establish causation. Perfectly dependent or constant predictors are rejected. The small teaching dataset illustrates the mechanics; it is not enough to establish a reliable predictive model.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## simple-regression
+
+Synthetic teaching data.
+
+```{r simple-regression, message=FALSE, warning=TRUE}
+data <- read_pasted_table(correlation_example)
+result <- run_correlation_regression(data,"Yield","Rainfall")
+```
+
+```{r simple-regression-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r simple-regression-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## multiple-regression
+
+Synthetic teaching data.
+
+```{r multiple-regression, message=FALSE, warning=TRUE}
+data <- read_pasted_table(correlation_example)
+result <- run_correlation_regression(data,"Yield",c("Rainfall","Nitrogen"))
+```
+
+```{r multiple-regression-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r multiple-regression-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

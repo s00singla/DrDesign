@@ -1,10 +1,17 @@
 Package: DrDesign
 Type: Package
 Title: Shiny Apps for Agricultural Experimental Data Analysis
-Version: 1.0.0
-Authors@R: person(given = "Saurav", family = "Singla", email = "saurav@example.com", role = c("aut", "cre"))
-Description: Allows users to perform analysis of Agricultural experimental data in CRD/RBD, factorial design, pooled ANOVA, split-plot, and correlation-regression analysis. It is further extended to plant breeding trails for Multi Environmental Trait Analysis. It is capable of producing clean and systematic pdf and word based outputs. A Graphical User Interface will pop up on using the functions in this package.
+Version: 1.1.0
+Authors@R: person(given = "Saurav", family = "Singla", email = "s00singla@gmail.com", role = c("aut", "cre", "cph"))
+Description: Shiny workflows for agricultural experimental design, trial validation,
+    analysis of variance, regression and multi-environment stability. Includes
+    augmented and strip-plot trials, genetic variability, multi-trait selection,
+    diversity, power planning, incomplete blocks, spatial analysis, combining
+    ability, heterosis and generation-mean analysis, with downloadable reports.
 License: GPL-3
+Copyright: 2026 Saurav Singla
+URL: https://github.com/s00singla/DrDesign
+BugReports: https://github.com/s00singla/DrDesign/issues
 Encoding: UTF-8
 RoxygenNote: 7.2.3
 Imports: 
@@ -29,7 +36,10 @@ Imports:
     lme4,
     lmerTest,
     metan,
-    writexl
+    writexl,
+    SpATS,
+    DiallelAnalysisR
 Suggests:
     shinytest,
-    testthat
+    testthat,
+    xml2

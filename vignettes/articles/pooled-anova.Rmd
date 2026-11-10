@@ -1,0 +1,49 @@
+---
+title: "Pooled ANOVA"
+output:
+  html_document:
+    toc: true
+---
+
+Combine seasons with a stated inferential scope
+
+## Question and data
+Provide Season, Rep, Treatment and Value. Every treatment must be represented in every season. The current model treats seasons, treatments and nested blocks as fixed.
+
+## Reporting and assumptions
+Report seasonal error MS and df alongside the combined sequential ANOVA. The residual median-centred Levene calculation is a diagnostic; it does not automatically authorize pooling.
+
+Inference is conditional on the observed seasons. For a random sample of environments, use a mixed-model approach with an appropriate genotype-by-environment structure.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## pooled-anova
+
+Synthetic teaching data.
+
+```{r pooled-anova, message=FALSE, warning=TRUE}
+data <- read_pasted_table(pooled_example)
+result <- run_pooled_anova(data)
+```
+
+```{r pooled-anova-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r pooled-anova-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

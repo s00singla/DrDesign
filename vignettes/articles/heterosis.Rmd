@@ -1,0 +1,49 @@
+---
+title: "Heterosis"
+output:
+  html_document:
+    toc: true
+---
+
+State the reference and the direction of improvement
+
+## Question and data
+Use a balanced replicated trial containing both parents, separate hybrids and optionally a commercial check. Select the reference entries and whether a lower response is better.
+
+## Reporting and assumptions
+Heterosis is 100 × (hybrid/reference − 1). Report mid-parent, observed better-parent and standard-check comparisons separately, with mean differences, SEs and Holm-adjusted difference tests. Percentage intervals use the delta method.
+
+Percentage uncertainty is unstable near a zero reference. Better-parent intervals condition on the observed selected parent. Negative heterosis can be desirable for a lower-is-better trait; statistical significance alone does not establish usefulness.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## heterosis
+
+Synthetic teaching data.
+
+```{r heterosis, message=FALSE, warning=TRUE}
+data <- research_example("heterosis")
+result <- run_heterosis(data,"G01","G02",c("G03","G04"),check="G05")
+```
+
+```{r heterosis-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r heterosis-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

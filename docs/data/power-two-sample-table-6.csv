@@ -1,0 +1,5 @@
+"Term","Setting","Value"
+"Method","Method","two-sample"
+"ResidualSD","ResidualSD","3"
+"Alpha","Alpha","0.05"
+"TargetPower","TargetPower","0.8"

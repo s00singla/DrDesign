@@ -1,0 +1,175 @@
+---
+title: "Design Randomizer"
+output:
+  html_document:
+    toc: true
+---
+
+Randomize before planting
+
+## Question and data
+Choose the design, treatment counts, replication counts and a reproducible seed. The examples cover CRD, RCBD, factorial CRD/RCBD, split plot, strip plot and augmented RCBD.
+
+## Reporting and assumptions
+The fieldbook records treatment allocation, plot identifiers and the seed. Record the actual field orientation and retain the original allocation before entering responses.
+
+Recording row and column positions are planning coordinates. Confirm the physical field orientation and randomization restrictions before using them for a spatial analysis.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## layout-CRD
+
+Synthetic teaching data.
+
+```{r layout-CRD, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("CRD",seed=7,trt=4,rep=3)
+```
+
+```{r layout-CRD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-CRD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## layout-RBD
+
+Synthetic teaching data.
+
+```{r layout-RBD, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("RBD",seed=7,trt=4,rep=3)
+```
+
+```{r layout-RBD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-RBD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## layout-Factorial-CRD
+
+Synthetic teaching data.
+
+```{r layout-Factorial-CRD, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("Factorial CRD",seed=7,factor_a_trt=2,factor_b_trt=3,rep=3)
+```
+
+```{r layout-Factorial-CRD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-Factorial-CRD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## layout-Factorial-RBD
+
+Synthetic teaching data.
+
+```{r layout-Factorial-RBD, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("Factorial RBD",seed=7,factor_a_trt=2,factor_b_trt=3,rep=3)
+```
+
+```{r layout-Factorial-RBD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-Factorial-RBD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## layout-Split-Plot
+
+Synthetic teaching data.
+
+```{r layout-Split-Plot, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("Split Plot",seed=7,main_trt=3,sub_trt=3,rep=3)
+```
+
+```{r layout-Split-Plot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-Split-Plot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## layout-Strip-Plot
+
+Synthetic teaching data.
+
+```{r layout-Strip-Plot, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("Strip Plot",seed=7,main_trt=3,sub_trt=3,rep=3)
+```
+
+```{r layout-Strip-Plot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-Strip-Plot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## layout-Augmented-RCBD
+
+Synthetic teaching data.
+
+```{r layout-Augmented-RCBD, message=FALSE, warning=TRUE}
+data <- data.frame(Seed=7)
+result <- run_design_layout("Augmented RCBD",seed=7,checks=3,test_trt=6,rep=3)
+```
+
+```{r layout-Augmented-RCBD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r layout-Augmented-RCBD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

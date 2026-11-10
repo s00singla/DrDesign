@@ -2,3 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Copyright filing: private applicant data and generated artifacts
+copyright-filing/applicant-details.tex
+copyright-filing/build/
+copyright-filing/tmp/
+output/
+release/
+/tmp/

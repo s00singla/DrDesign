@@ -1,0 +1,49 @@
+---
+title: "Augmented Trial Analysis"
+output:
+  html_document:
+    toc: true
+---
+
+Adjust unreplicated entries using replicated checks
+
+## Question and data
+Include at least two checks once in every block and each test entry exactly once. Select the checks explicitly; do not infer check status from a treatment name.
+
+## Reporting and assumptions
+Report adjusted means and the appropriate comparison standard errors. The ANOVA is sequential, with blocks fitted before adjusted genotype effects. Differences from the average adjusted check mean are descriptive contrasts.
+
+Unreplicated test entries do not acquire independent replication through adjustment. DAU Fisher LSD comparisons are unadjusted for multiplicity; prioritize scientifically planned comparisons.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## augmented
+
+Synthetic teaching data.
+
+```{r augmented, message=FALSE, warning=TRUE}
+data <- research_example("augmented-trial")
+result <- run_augmented_trial(data,c("C1","C2"))
+```
+
+```{r augmented-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r augmented-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

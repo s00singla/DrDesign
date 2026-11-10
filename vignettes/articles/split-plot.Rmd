@@ -1,0 +1,51 @@
+---
+title: "Split Plot"
+output:
+  html_document:
+    toc: true
+---
+
+Respect the whole-plot and subplot errors
+
+## Question and data
+Provide Rep, MainPlot, SubPlot and Value, with one observation per complete cell. Custom columns can be mapped explicitly. The classical tables require a complete balanced design.
+
+## Reporting and assumptions
+The classical ANOVA uses Error(a) for main plots and Error(b) for subplots and interaction. Comparison summaries report SE(d), not SE(m). Comparisons spanning main plots use an approximate Satterthwaite df. Mixed-model outputs are separately identified.
+
+Half-LSD bars are comparison aids, not confidence intervals. Keep the interaction in the model. Fixed and mixed analyses can differ at boundary variance estimates; inspect diagnostics rather than selecting whichever gives significance.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## split-plot
+
+Synthetic teaching data.
+
+```{r split-plot, message=FALSE, warning=TRUE}
+data <- expand.grid(Rep=paste0("R",1:4),MainPlot=paste0("A",1:3),SubPlot=paste0("B",1:3))
+i <- seq_len(nrow(data))
+data$Value <- 30+as.numeric(data$MainPlot)*2+as.numeric(data$SubPlot)+sin(i*1.7)+rep(c(-2,1,0,1),9)
+result <- run_split_plot(data)
+```
+
+```{r split-plot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r split-plot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

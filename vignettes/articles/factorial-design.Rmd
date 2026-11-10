@@ -1,0 +1,70 @@
+---
+title: "Factorial Design"
+output:
+  html_document:
+    toc: true
+---
+
+Retain the interaction and explain the simple effects
+
+## Question and data
+Provide one row per factor combination, in A-major/B-minor order: A1B1, A1B2, then A2B1, A2B2. Set the actual number of levels and choose CRD or RBD.
+
+## Reporting and assumptions
+The full factorial model remains the inference model. Report the interaction with main effects and interpret marginal means in that context. Tukey pairwise tables and compact-letter displays are provided; the additive ANOVA is a separate descriptive comparison.
+
+The software does not choose an additive model from an interaction p-value. Main effects can obscure a strong interaction. Confirm the row-to-factor mapping shown in the long-data table.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## Factorial-CRD
+
+Synthetic teaching data.
+
+```{r Factorial-CRD, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Factorial CRD"]])
+result <- run_design_analysis(data, "Factorial CRD", levels_a=2, levels_b=2)
+```
+
+```{r Factorial-CRD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r Factorial-CRD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## Factorial-RBD
+
+Synthetic teaching data.
+
+```{r Factorial-RBD, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Factorial RBD"]])
+result <- run_design_analysis(data, "Factorial RBD", levels_a=2, levels_b=2)
+```
+
+```{r Factorial-RBD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r Factorial-RBD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

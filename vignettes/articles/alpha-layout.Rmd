@@ -1,0 +1,49 @@
+---
+title: "Alpha-Lattice Fieldbook"
+output:
+  html_document:
+    toc: true
+---
+
+Allocate resolvable incomplete blocks
+
+## Question and data
+Specify the genotype count, entries per block, number of complete replicates and seed. Block size must divide the genotype count; the agricolae alpha-design restrictions also apply.
+
+## Reporting and assumptions
+Each genotype should occur once in every replicate. Keep the replicate and incomplete-block identifiers with every response measurement.
+
+This is a layout generator. It does not establish that the chosen field geometry removes spatial variation or guarantee a particular efficiency gain.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## alpha-layout
+
+Synthetic teaching data.
+
+```{r alpha-layout, message=FALSE, warning=TRUE}
+data <- data.frame(Genotypes=12,BlockSize=3,Replications=3,Seed=7)
+result <- list(fieldbook=run_alpha_layout(12,3,3,7))
+```
+
+```{r alpha-layout-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r alpha-layout-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

@@ -1,0 +1,32 @@
+# Local packaging preflight: does not upload or update the hosted application.
+stopifnot(requireNamespace("jsonlite",quietly=TRUE),requireNamespace("rsconnect",quietly=TRUE))
+lock_text<-paste(readLines("renv.lock",warn=FALSE,encoding="UTF-8"),collapse="\n")
+stopifnot(jsonlite::validate(lock_text))
+lock<-jsonlite::fromJSON(lock_text,simplifyVector=FALSE)
+stopifnot(length(lock$Packages)>0L)
+files<-rsconnect::listDeploymentFiles(".")
+required<-c("app.R","DESCRIPTION","renv.lock","analysis-report-template.Rmd","research-report-template.Rmd",
+            list.files("R",pattern="\\.R$",full.names=TRUE),
+            list.files("inst/extdata",recursive=TRUE,full.names=TRUE))
+stopifnot(all(required %in% files))
+excluded<-c(".RData","copyright-filing","output","tmp","release","docs","vignettes","tests","tools","grapesAgri1-1.1.0")
+top<-sub("/.*$","",files)
+stopifnot(!any(top %in% excluded))
+deps<-rsconnect::appDependencies(appDir=".",appFiles=files,appMode="shiny")
+stopifnot(identical(as.character(deps$Version),unname(vapply(lock$Packages[deps$Package],function(record)record$Version,character(1)))))
+imports<-trimws(gsub("\\s*\\(.*\\)","",strsplit(read.dcf("DESCRIPTION")[[1,"Imports"]],",")[[1]]))
+stopifnot(all(imports %in% deps$Package))
+dir.create("output/deployment-check",recursive=TRUE,showWarnings=FALSE)
+writeLines(files,"output/deployment-check/bundle-files.txt")
+write.csv(deps,"output/deployment-check/dependencies.csv",row.names=FALSE)
+stage<-file.path("output","deployment-check","stage")
+dir.create(stage,recursive=TRUE,showWarnings=FALSE)
+for(file in files) {
+  destination<-file.path(stage,file)
+  dir.create(dirname(destination),recursive=TRUE,showWarnings=FALSE)
+  stopifnot(file.copy(file,destination,overwrite=TRUE))
+}
+rsconnect::writeManifest(appDir=stage,appFiles=files,appMode="shiny",quiet=TRUE)
+manifest<-paste(readLines(file.path(stage,"manifest.json"),warn=FALSE,encoding="UTF-8"),collapse="\n")
+stopifnot(jsonlite::validate(manifest))
+cat("PASS: valid lock and deployment manifest;",length(files),"bundle files;",nrow(deps),"resolved dependencies with pinned versions preserved. No deployment performed.\n")

@@ -33,17 +33,23 @@ assert_rendered <- function(path, label) {
 }
 
 render_report_pair <- function(label, params) {
-  word_file <- tempfile(pattern = paste0(gsub("[^A-Za-z0-9]+", "-", label), "-"), fileext = ".docx")
+  dir.create("output/legacy-reports", recursive = TRUE, showWarnings = FALSE)
+  stem <- file.path("output/legacy-reports", gsub("[^A-Za-z0-9]+", "-", label))
+  word_file <- paste0(stem, ".docx")
   render_parameterized_report(word_file, "word_document", params)
   assert_rendered(word_file, paste(label, "Word report"))
+  document <- xml2::read_xml(unz(word_file, "word/document.xml"))
+  tables <- xml2::xml_find_all(document, ".//w:tbl", xml2::xml_ns(document))
+  stopifnot(length(tables) > 0, !grepl("\\begin{longtable}", xml2::xml_text(document), fixed = TRUE))
 
   if (has_pdf_engine()) {
-    pdf_file <- tempfile(pattern = paste0(gsub("[^A-Za-z0-9]+", "-", label), "-"), fileext = ".pdf")
+    pdf_file <- paste0(stem, ".pdf")
     render_parameterized_report(pdf_file, "pdf_document", params)
     assert_rendered(pdf_file, paste(label, "PDF report"))
   } else {
     message("Skipping ", label, " PDF report smoke test; no LaTeX engine found.")
   }
+  cat("PASS reports:", label, "\n")
 }
 
 design_layout_params <- function() {
@@ -220,6 +226,35 @@ split_plot_params <- function() {
   )
 }
 
+pooled_split_plot_params <- function() {
+  result <- run_pooled_split_plot(read_pasted_table(pooled_split_plot_example), alpha = 0.05, include_pwpp = TRUE)
+  list(
+    report_title = "Pooled Split-RCBD Analysis Report",
+    design_name = "Pooled Split-RCBD",
+    alpha = 0.05,
+    comparison_method = "Fisher LSD, unadjusted pairwise contrasts",
+    summary_stats = result$cd_summary,
+    anova_table = result$anova,
+    key_statistics = result$model_info,
+    mean_table = result$interaction_means,
+    posthoc_summary = result$lsd_main,
+    posthoc_table = result$lsd_interaction,
+    dataset_preview = head(result$dataset, 20),
+    inference_text = "Comparison-specific CD = qt(1 - alpha / 2, df) * SE.",
+    report_note = result$report_note,
+    plot_errorbar = result$interaction_plot,
+    extra_tables = list(
+      "Critical Difference Summary" = result$cd_summary,
+      "Fisher LSD - Interaction Cells" = result$lsd_interaction,
+      "Fisher LSD - Subplot Within Main Plot" = result$lsd_sub_within_main,
+      "Fisher LSD - Main Plot Within Subplot" = result$lsd_main_within_sub
+    ),
+    extra_text_sections = list("Mixed-Model Summary" = result$model_summary),
+    extra_plots = list("Interaction Pairwise P-Value Plot (PWPP)" = result$pwpp_plot),
+    generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+  )
+}
+
 correlation_params <- function() {
   result <- run_correlation_regression(read_pasted_table(correlation_example), "Yield", c("Rainfall", "Nitrogen"))
   list(
@@ -295,6 +330,7 @@ reports <- list(
   "Compare Means" = compare_means_params(),
   "Factorial Design" = factorial_params(),
   "Pooled ANOVA" = pooled_params(),
+  "Pooled Split Plot" = pooled_split_plot_params(),
   "Split Plot" = split_plot_params(),
   "Correlation Regression" = correlation_params()
 )
@@ -307,5 +343,17 @@ if (!is.null(met_report)) {
 for (label in names(reports)) {
   render_report_pair(label, reports[[label]])
 }
+
+pooled_split_html <- tempfile(pattern = "pooled-split-plot-", fileext = ".html")
+pooled_split_html_params <- pooled_split_plot_params()
+save_html_report(
+  pooled_split_html_params$report_title,
+  list(
+    list(title = "Pooled Split-RCBD ANOVA", table = pooled_split_html_params$anova_table),
+    list(title = "Interaction Pairwise P-Value Plot (PWPP)", plot = pooled_split_html_params$extra_plots[[1]])
+  ),
+  pooled_split_html
+)
+assert_rendered(pooled_split_html, "Pooled Split Plot HTML report")
 
 cat("All report smoke tests passed.\n")

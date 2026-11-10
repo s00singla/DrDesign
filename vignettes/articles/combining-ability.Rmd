@@ -1,0 +1,71 @@
+---
+title: "Combining Ability"
+output:
+  html_document:
+    toc: true
+---
+
+Estimate effects for a clearly defined parental set
+
+## Question and data
+Choose a balanced crosses-only line × tester trial, or Griffing Method II with parents and one F1 per nonreciprocal cross in every replicate. Parent identifiers and replication are required.
+
+## Reporting and assumptions
+Report fixed GCA and SCA effects, residual-model SEs, confidence intervals and Holm-adjusted effect tests. The diallel implementation derives uncertainty from residual covariance rather than the package's replication-MS standard-error field.
+
+The effects describe the tested parents. They are not estimates of additive and dominance variance in a randomly sampled population. Reciprocal effects, other Griffing methods and multi-environment combining ability are outside this implementation.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## line-tester
+
+Synthetic teaching data.
+
+```{r line-tester, message=FALSE, warning=TRUE}
+data <- research_example("combining-ability")
+result <- run_combining_ability(data)
+```
+
+```{r line-tester-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r line-tester-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## diallel
+
+Synthetic teaching data.
+
+```{r diallel, message=FALSE, warning=TRUE}
+pairs <- which(upper.tri(matrix(0,4,4),diag=TRUE),arr.ind=TRUE)
+data <- do.call(rbind,lapply(1:3,function(r)data.frame(Rep=paste0("R",r),Parent1=paste0("P",pairs[,1]),Parent2=paste0("P",pairs[,2]),Value=20+pairs[,1]+pairs[,2]+sin(seq_len(nrow(pairs))*r))))
+result <- run_combining_ability(data,method="diallel")
+```
+
+```{r diallel-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r diallel-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

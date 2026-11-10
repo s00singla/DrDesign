@@ -1,0 +1,6 @@
+"Term","Component","Variance"
+"f(Column)","f(Column)",8.97215970872414e-78
+"f(Row)","f(Row)",0.0501536024120524
+"f(Column):Row","f(Column):Row",1.69785316411307
+"Column:f(Row)","Column:f(Row)",44.63503050457
+"f(Column):f(Row)","f(Column):f(Row)",1.41106451756746e-27

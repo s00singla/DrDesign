@@ -24,9 +24,9 @@ met_direction_label <- function(direction) {
 
 met_rank <- function(x, direction = "h") {
   if (identical(direction, "l")) {
-    rank(x, ties.method = "first", na.last = "keep")
+    rank(x, ties.method = "average", na.last = "keep")
   } else {
-    rank(-x, ties.method = "first", na.last = "keep")
+    rank(-x, ties.method = "average", na.last = "keep")
   }
 }
 
@@ -119,10 +119,10 @@ met_format_anova_table <- function(av) {
     Source = av$Source,
     df = col_or_na(c("Df", "NumDF", "DF")),
     Den_df = col_or_na(c("DenDF", "Den Df")),
-    SS = round(col_or_na(c("Sum Sq", "Sum.Sq", "SS")), 4),
-    MS = round(col_or_na(c("Mean Sq", "Mean.Sq", "MS")), 4),
-    F_value = round(col_or_na(c("F value", "F.value", "F")), 3),
-    Pr_F = round(col_or_na(c("Pr(>F)", "Pr..F.", "P value", "P.value")), 4),
+    SS = col_or_na(c("Sum Sq", "Sum.Sq", "SS")),
+    MS = col_or_na(c("Mean Sq", "Mean.Sq", "MS")),
+    F_value = col_or_na(c("F value", "F.value", "F")),
+    Pr_F = col_or_na(c("Pr(>F)", "Pr..F.", "P value", "P.value")),
     Sig = sig_stars(col_or_na(c("Pr(>F)", "Pr..F.", "P value", "P.value"))),
     stringsAsFactors = FALSE
   )
@@ -137,14 +137,16 @@ compute_gen_means <- function(dat, direction = "h") {
       GEN = g,
       Genotype = g,
       N = sum(!is.na(y)),
-      Mean = round(m, 4),
-      SD = round(s, 4),
-      CV_pct = if (is.finite(m) && abs(m) > 0) round(100 * s / abs(m), 2) else NA_real_,
+      Mean = m,
+      SD = s,
+      CV_pct = if (is.finite(m) && abs(m) > 0) 100 * s / abs(m) else NA_real_,
       stringsAsFactors = FALSE
     )
   }))
   result$Rank_Mean <- met_rank(result$Mean, direction)
-  result[order(result$Rank_Mean), , drop = FALSE]
+  result <- result[order(result$Rank_Mean), c("GEN", "Genotype", "N", "Mean", "SD", "CV_pct", "Rank_Mean"), drop = FALSE]
+  rownames(result) <- NULL
+  result
 }
 
 compute_individual_anovas <- function(dat, alpha = 0.05) {
@@ -160,12 +162,12 @@ compute_individual_anovas <- function(dat, alpha = 0.05) {
       error_ms <- out$MS[out$Source == "Residuals"]
       grand_mean <- mean(sub$Y, na.rm = TRUE)
       cv_pct <- if (length(error_ms) == 1 && !is.na(error_ms) && abs(grand_mean) > 0) {
-        round(100 * sqrt(error_ms) / abs(grand_mean), 2)
+        100 * sqrt(error_ms) / abs(grand_mean)
       } else {
         NA_real_
       }
       attr(out, "cv_pct") <- cv_pct
-      attr(out, "grand_mean") <- round(grand_mean, 4)
+      attr(out, "grand_mean") <- grand_mean
       out
     }, error = function(e) {
       data.frame(Source = "Error", df = NA, Den_df = NA, SS = NA, MS = NA,
@@ -187,17 +189,17 @@ compute_combined_anova <- function(dat, alpha = 0.05) {
     error_var <- vc$vcov[vc$grp == "Residual"]
     grand_mean <- mean(dat$Y, na.rm = TRUE)
     cv_pct <- if (length(error_var) == 1 && !is.na(error_var) && abs(grand_mean) > 0) {
-      round(100 * sqrt(error_var) / abs(grand_mean), 2)
+      100 * sqrt(error_var) / abs(grand_mean)
     } else {
       NA_real_
     }
     out <- rbind(out, data.frame(
       Source = "Residual (Error)", df = NA, Den_df = NA, SS = NA,
-      MS = round(if (length(error_var) == 1) error_var else NA_real_, 4),
+      MS = if (length(error_var) == 1) error_var else NA_real_,
       F_value = NA, Pr_F = NA, Sig = "", stringsAsFactors = FALSE
     ))
     attr(out, "cv_pct") <- cv_pct
-    attr(out, "grand_mean") <- round(grand_mean, 4)
+    attr(out, "grand_mean") <- grand_mean
     out
   }, error = function(e) {
     data.frame(Source = "Error", df = NA, Den_df = NA, SS = NA, MS = NA,
@@ -224,46 +226,12 @@ compute_year_anova <- function(dat, alpha = 0.05) {
   })
 }
 
-fallback_ammi_stability <- function(ammi_pc_scores, ammi_ipca_summary) {
-  if (is.null(ammi_pc_scores) || is.null(ammi_ipca_summary)) {
-    return(NULL)
-  }
-  pc_cols <- grep("^PC[0-9]+$", names(ammi_pc_scores), value = TRUE)
-  if (length(pc_cols) == 0) {
-    return(NULL)
-  }
-
-  scores <- as.matrix(ammi_pc_scores[pc_cols])
-  explained <- ammi_ipca_summary$Explained_percent[seq_along(pc_cols)]
-  explained <- ifelse(is.na(explained), 0, explained)
-  weights <- explained / sum(explained)
-  if (any(!is.finite(weights))) {
-    weights <- rep(1 / length(pc_cols), length(pc_cols))
-  }
-
-  pc1 <- scores[, 1]
-  pc2 <- if (ncol(scores) >= 2) scores[, 2] else rep(0, length(pc1))
-  ss1 <- ammi_ipca_summary$SS[1]
-  ss2 <- if (nrow(ammi_ipca_summary) >= 2) ammi_ipca_summary$SS[2] else NA_real_
-  asv_weight <- if (is.finite(ss1) && is.finite(ss2) && ss2 != 0) ss1 / ss2 else 1
-  za_total <- sum(abs(scores), na.rm = TRUE)
-
-  data.frame(
-    GEN = ammi_pc_scores$GEN,
-    ASV = sqrt((asv_weight * pc1)^2 + pc2^2),
-    EV = rowMeans(scores^2, na.rm = TRUE),
-    SIPC = rowSums(abs(scores), na.rm = TRUE),
-    WAAS = as.numeric(abs(scores) %*% weights),
-    ZA = if (za_total > 0) 100 * rowSums(abs(scores), na.rm = TRUE) / za_total else NA_real_,
-    stringsAsFactors = FALSE
-  )
-}
-
 compute_ammi <- function(dat) {
   warnings <- character(0)
   add_warning <- function(msg) warnings <<- c(warnings, msg)
 
   tryCatch({
+    if(any(table(dat$GEN,dat$ENV)==0)) stop("AMMI requires every genotype-environment mean; automatic imputation is disabled.")
     ammi_mod <- metan::performs_ammi(
       .data = dat, env = ENV, gen = GEN, rep = REP, resp = Y,
       verbose = FALSE
@@ -309,12 +277,12 @@ compute_ammi <- function(dat) {
         met_safe_metric_by_gen(ammi_ind_mod, "ZA", "ZA")
       ))
     }, error = function(e) {
-      add_warning(paste("metan::ammi_indexes() failed; fallback stability was used:", conditionMessage(e)))
-      fallback_ammi_stability(pc_scores, ipca_summary)
+      add_warning(paste("AMMI stability indices unavailable; no substitute formula was used:", conditionMessage(e)))
+      NULL
     })
 
     if (is.null(stability)) {
-      stability <- fallback_ammi_stability(pc_scores, ipca_summary)
+      add_warning("AMMI stability indices unavailable for this fitted model.")
     }
 
     list(
@@ -338,6 +306,7 @@ compute_ammi <- function(dat) {
 
 compute_gge <- function(dat) {
   tryCatch({
+    if(any(table(dat$GEN,dat$ENV)==0)) stop("GGE requires every genotype-environment mean; automatic imputation is disabled.")
     list(mod = metan::gge(.data = dat, env = ENV, gen = GEN, resp = Y, verbose = FALSE))
   }, error = function(e) {
     list(mod = NULL, error = conditionMessage(e), warnings = paste("GGE model failed:", conditionMessage(e)))
@@ -389,8 +358,7 @@ compute_waasb <- function(dat, direction = "h") {
 }
 
 safe_harmonic <- function(x) {
-  x <- x[is.finite(x) & x > 0]
-  if (length(x) == 0) return(NA_real_)
+  if (length(x) == 0 || any(!is.finite(x) | x <= 0)) return(NA_real_)
   length(x) / sum(1 / x)
 }
 
@@ -426,12 +394,13 @@ compute_blup_indices <- function(dat, gen_means, direction = "h") {
       )
     }))
 
-    means <- gen_means[, intersect(c("GEN", "Genotype", "Mean", "Rank_Mean"), names(gen_means)), drop = FALSE]
+    means <- gen_means[, intersect(c("GEN", "Mean", "Rank_Mean"), names(gen_means)), drop = FALSE]
     indices <- merge(indices, means, by = "GEN", all.x = TRUE)
     indices$Rank_HMGV <- met_rank(indices$HMGV, direction)
     indices$Rank_RPGV <- met_rank(indices$RPGV, direction)
     indices$Rank_HMRPGV <- met_rank(indices$HMRPGV, direction)
-    indices <- indices[order(indices$Rank_HMRPGV), , drop = FALSE]
+    ordered_cols <- c("GEN", "Mean", "Rank_Mean", "HMGV", "Rank_HMGV", "RPGV", "Rank_RPGV", "HMRPGV", "Rank_HMRPGV")
+    indices <- indices[order(indices$Rank_HMRPGV), c(intersect(ordered_cols, names(indices)), setdiff(names(indices), ordered_cols)), drop = FALSE]
     rownames(indices) <- NULL
     indices
   }, error = function(e) {
@@ -445,27 +414,32 @@ compute_ssi <- function(waasb_scores, gen_means, direction = "h") {
       return(list(full = NULL, culled = NULL))
     }
 
-    means <- gen_means[, intersect(c("GEN", "Genotype", "Mean", "Rank_Mean"), names(gen_means)), drop = FALSE]
+    means <- gen_means[, intersect(c("GEN", "Mean", "Rank_Mean"), names(gen_means)), drop = FALSE]
     ssi <- merge(waasb_scores, means, by = "GEN", all.x = TRUE)
 
     if (!"WAASB" %in% names(ssi)) ssi$WAASB <- NA_real_
     if (!"WAASBY" %in% names(ssi)) ssi$WAASBY <- NA_real_
     ssi$Rank_Yield <- ssi$Rank_Mean
-    ssi$Rank_Stability <- rank(ssi$WAASB, ties.method = "first", na.last = "keep")
+    ssi$Rank_Stability <- rank(ssi$WAASB, ties.method = "average", na.last = "keep")
     ssi$NP_SSI <- ssi$Rank_Yield + ssi$Rank_Stability
-    ssi$Rank_NP_SSI <- rank(ssi$NP_SSI, ties.method = "first", na.last = "keep")
+    ssi$Rank_NP_SSI <- rank(ssi$NP_SSI, ties.method = "average", na.last = "keep")
 
     if (!"Rank_WAASBY" %in% names(ssi) || all(is.na(ssi$Rank_WAASBY))) {
-      ssi$Rank_WAASBY <- rank(-ssi$WAASBY, ties.method = "first", na.last = "keep")
+      ssi$Rank_WAASBY <- rank(-ssi$WAASBY, ties.method = "average", na.last = "keep")
     }
     ssi$P_SSI <- ssi$WAASBY
     ssi$Rank_P_SSI <- ssi$Rank_WAASBY
     ssi$Stable_by_culling <- ssi$WAASB < mean(ssi$WAASB, na.rm = TRUE)
-    ssi <- ssi[order(ssi$Rank_P_SSI), , drop = FALSE]
+    ssi_cols <- c("GEN", "Mean", "Rank_Mean", "Rank_Yield", "WAASB", "Rank_Stability", "WAASBY", "Rank_WAASBY", "P_SSI", "Rank_P_SSI", "NP_SSI", "Rank_NP_SSI", "Stable_by_culling")
+    ssi <- ssi[order(ssi$Rank_P_SSI), c(intersect(ssi_cols, names(ssi)), setdiff(names(ssi), ssi_cols)), drop = FALSE]
+    rownames(ssi) <- NULL
 
     cssi <- ssi[isTRUE(ssi$Stable_by_culling) | (!is.na(ssi$Stable_by_culling) & ssi$Stable_by_culling), , drop = FALSE]
     cssi <- cssi[order(cssi$Rank_Yield), , drop = FALSE]
     cssi$Rank_C_SSI <- seq_len(nrow(cssi))
+    cssi_cols <- c("GEN", "Rank_C_SSI", "Mean", "Rank_Yield", "WAASB", "Rank_Stability", "P_SSI", "Rank_P_SSI", "NP_SSI", "Rank_NP_SSI", "Stable_by_culling")
+    cssi <- cssi[, c(intersect(cssi_cols, names(cssi)), setdiff(names(cssi), cssi_cols)), drop = FALSE]
+    rownames(cssi) <- NULL
 
     list(full = ssi, culled = cssi)
   }, error = function(e) {
@@ -474,7 +448,7 @@ compute_ssi <- function(waasb_scores, gen_means, direction = "h") {
 }
 
 prepare_met_data <- function(data, gen_col, env_col, rep_col, trait_col,
-                             season_col = NULL, loc_col = NULL) {
+                             season_col = NULL, loc_col = NULL, exclude_missing = FALSE) {
   dat <- as.data.frame(data, stringsAsFactors = FALSE)
   required_cols <- c(gen_col, env_col, rep_col, trait_col)
   missing_cols <- setdiff(required_cols, names(dat))
@@ -482,35 +456,31 @@ prepare_met_data <- function(data, gen_col, env_col, rep_col, trait_col,
     stop("Missing columns: ", paste(missing_cols, collapse = ", "))
   }
 
-  names(dat)[names(dat) == gen_col] <- "GEN"
-  names(dat)[names(dat) == env_col] <- "ENV"
-  names(dat)[names(dat) == rep_col] <- "REP"
-  names(dat)[names(dat) == trait_col] <- "Y"
-
-  if (!is.null(season_col) && season_col %in% names(dat)) {
-    names(dat)[names(dat) == season_col] <- "SEASON"
-  }
-  if (!is.null(loc_col) && loc_col %in% names(dat)) {
-    names(dat)[names(dat) == loc_col] <- "LOC"
-  }
+  if (anyDuplicated(required_cols)) stop("Map different columns to genotype, environment, replication and trait.")
+  original <- dat
+  dat <- data.frame(GEN = original[[gen_col]], ENV = original[[env_col]], REP = original[[rep_col]], Y = original[[trait_col]], stringsAsFactors = FALSE)
+  if (!is.null(season_col) && season_col %in% names(original)) dat$SEASON <- original[[season_col]]
+  if (!is.null(loc_col) && loc_col %in% names(original)) dat$LOC <- original[[loc_col]]
 
   dat$GEN <- as.factor(trimws(as.character(dat$GEN)))
   dat$ENV <- as.factor(trimws(as.character(dat$ENV)))
   dat$REP <- as.factor(trimws(as.character(dat$REP)))
   if ("SEASON" %in% names(dat)) dat$SEASON <- as.factor(trimws(as.character(dat$SEASON)))
   if ("LOC" %in% names(dat)) dat$LOC <- as.factor(trimws(as.character(dat$LOC)))
-  dat$Y <- met_clean_numeric(dat$Y)
-  dat <- dat[!is.na(dat$Y), , drop = FALSE]
+  review <- review_observations(dat, "Y", c("GEN", "ENV", "REP", intersect(c("SEASON", "LOC"), names(dat))), exclude_missing)
+  dat <- review$data
+  if (anyDuplicated(dat[c("GEN", "ENV", "REP")])) stop("Duplicate genotype/environment/replication units. Aggregate subsamples appropriately before analysis.")
   validate_met_data(dat)
+  attr(dat, "exclusions") <- review$exclusions
   dat
 }
 
 run_met_analysis <- function(data, gen_col, env_col, rep_col, trait_col,
                              season_col = NULL, loc_col = NULL, alpha = 0.05,
-                             direction = "h") {
+                             direction = "h", exclude_missing = FALSE) {
   met_required_packages()
   direction <- if (identical(direction, "l")) "l" else "h"
-  dat <- prepare_met_data(data, gen_col, env_col, rep_col, trait_col, season_col, loc_col)
+  dat <- prepare_met_data(data, gen_col, env_col, rep_col, trait_col, season_col, loc_col, exclude_missing)
 
   gen_means <- compute_gen_means(dat, direction)
   ammi <- compute_ammi(dat)
@@ -520,6 +490,7 @@ run_met_analysis <- function(data, gen_col, env_col, rep_col, trait_col,
 
   res <- list(
     dataset = dat,
+    exclusions = attr(dat, "exclusions"),
     gen_means = gen_means,
     ind_anova = compute_individual_anovas(dat, alpha),
     comb_anova = compute_combined_anova(dat, alpha),
@@ -540,12 +511,13 @@ run_met_analysis <- function(data, gen_col, env_col, rep_col, trait_col,
     "Trait: %s | Direction: %s | Genotypes: %d | Environments: %d | Observations: %d",
     trait_col, res$direction_label, res$n_gen, res$n_env, nrow(dat)
   )
+  if("HMGV" %in% names(res$blup) && anyNA(res$blup$HMGV)) res$warnings<-unique(c(res$warnings,"Harmonic stability indices require positive finite predictions in every environment; unavailable values are not silently discarded."))
   res
 }
 
 run_met_batch_analysis <- function(data, gen_col, env_col, rep_col, trait_cols,
                                    direction_map, season_col = NULL, loc_col = NULL,
-                                   alpha = 0.05) {
+                                   alpha = 0.05, exclude_missing = FALSE) {
   trait_cols <- unique(trait_cols[nzchar(trait_cols)])
   if (length(trait_cols) == 0) {
     stop("Select at least one numeric trait for batch MET analysis.")
@@ -558,7 +530,7 @@ run_met_batch_analysis <- function(data, gen_col, env_col, rep_col, trait_cols,
     direction <- direction_map[[trait]]
     if (is.null(direction) || !direction %in% c("h", "l")) direction <- "h"
     result <- tryCatch(
-      run_met_analysis(data, gen_col, env_col, rep_col, trait, season_col, loc_col, alpha, direction),
+      run_met_analysis(data, gen_col, env_col, rep_col, trait, season_col, loc_col, alpha, direction, exclude_missing),
       error = function(e) e
     )
     if (inherits(result, "error")) {
@@ -608,6 +580,7 @@ run_met_batch_analysis <- function(data, gen_col, env_col, rep_col, trait_cols,
 met_result_tables <- function(res) {
   tables <- list(
     Dataset = res$dataset,
+    Exclusions = res$exclusions,
     Genotype_Means = res$gen_means,
     Combined_ANOVA = res$comb_anova,
     Over_Year_ANOVA = res$year_anova,
@@ -726,3 +699,5 @@ met_safe_sheet_names <- function(names_in) {
     substr(paste0(substr(base, 1, 31 - nchar(suffix)), suffix), 1, 31)
   }, character(1), USE.NAMES = FALSE)
 }
+
+run_met_analysis <- capture_analysis_health(run_met_analysis)

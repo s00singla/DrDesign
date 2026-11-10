@@ -1,0 +1,49 @@
+---
+title: "Strip-Plot Analysis"
+output:
+  html_document:
+    toc: true
+---
+
+Use three appropriate error strata
+
+## Question and data
+Supply a complete Rep × FactorA × FactorB layout. Both treatment factors are randomized in strips, making this different from a split-plot design.
+
+## Reporting and assumptions
+Report factor A against Rep:A, factor B against Rep:B, and the interaction against the residual interaction error. The estimated-means model includes these strata. Tukey corrections apply within each displayed comparison family.
+
+Do not analyze a strip plot as an ordinary factorial CRD. Unbalanced or duplicated cells are rejected in this workflow.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## strip-plot
+
+Synthetic teaching data.
+
+```{r strip-plot, message=FALSE, warning=TRUE}
+data <- research_example("strip-plot")
+result <- run_strip_trial(data)
+```
+
+```{r strip-plot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r strip-plot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

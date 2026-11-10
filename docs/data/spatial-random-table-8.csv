@@ -1,0 +1,5 @@
+"Term","Setting","Value"
+"Genotype","Genotype","Random"
+"Replication","Replication","Fixed"
+"Spatial","Spatial","PSANOVA(Column, Row), 3 x 3 segments"
+"Alpha","Alpha","0.05"

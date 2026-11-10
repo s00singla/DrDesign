@@ -1,0 +1,70 @@
+---
+title: "Power & Replication Planning"
+output:
+  html_document:
+    toc: true
+---
+
+Plan replication from an effect worth detecting
+
+## Question and data
+Supply anticipated group means, residual SD, significance level and target power. Choose balanced CRD ANOVA or two independent groups.
+
+## Reporting and assumptions
+The recommended count is rounded up per group and power is recalculated for that integer design. The sensitivity curve shows how power changes with replication.
+
+The calculation assumes independent normal observations and a common variance. It does not include blocks, split plots, clustering, attrition or multiple-primary-outcome adjustment.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## power-anova
+
+Synthetic teaching data.
+
+```{r power-anova, message=FALSE, warning=TRUE}
+data <- data.frame(Mean=c(20,22,24))
+result <- run_power_planning(data$Mean,residual_sd=3,method="anova")
+```
+
+```{r power-anova-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r power-anova-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## power-two-sample
+
+Synthetic teaching data.
+
+```{r power-two-sample, message=FALSE, warning=TRUE}
+data <- data.frame(Mean=c(20,22))
+result <- run_power_planning(data$Mean,residual_sd=3,method="two-sample")
+```
+
+```{r power-two-sample-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r power-two-sample-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

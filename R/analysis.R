@@ -21,6 +21,30 @@ default_data <- list(
 
 pooled_example <- "Season\tRep\tTreatment\tValue\nKharif-2024\tR1\tT1\t25.4\nKharif-2024\tR2\tT1\t26.1\nKharif-2024\tR1\tT2\t28.2\nKharif-2024\tR2\tT2\t27.8\nRabi-2025\tR1\tT1\t24.9\nRabi-2025\tR2\tT1\t25.5\nRabi-2025\tR1\tT2\t29.0\nRabi-2025\tR2\tT2\t28.6"
 split_plot_example <- "Rep\tMainPlot\tSubPlot\tValue\nR1\tI1\tV1\t28.1\nR1\tI1\tV2\t31.5\nR1\tI2\tV1\t30.2\nR1\tI2\tV2\t34.6\nR2\tI1\tV1\t27.4\nR2\tI1\tV2\t30.8\nR2\tI2\tV1\t29.9\nR2\tI2\tV2\t33.8"
+pooled_split_plot_example <- local({
+  example_data <- expand.grid(
+    Year = c("2023", "2024", "2025"),
+    Rep = c("R1", "R2", "R3"),
+    MainPlot = c("M1", "M2"),
+    SubPlot = c("S1", "S2"),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  example_data$Value <- with(
+    example_data,
+    32 + as.numeric(factor(Year)) * 0.8 + as.numeric(factor(MainPlot)) * 2.2 +
+      as.numeric(factor(SubPlot)) * 1.1 + as.numeric(factor(Rep)) * 0.25
+  )
+  # Deterministic teaching variation keeps residual uncertainty estimable.
+  example_data$Value <- example_data$Value + sin(seq_len(nrow(example_data)) * 1.7)
+  paste(
+    c(
+      paste(names(example_data), collapse = "\t"),
+      apply(example_data, 1, paste, collapse = "\t")
+    ),
+    collapse = "\n"
+  )
+})
 correlation_example <- "Yield\tRainfall\tNitrogen\tPlantHeight\n42.1\t740\t90\t112\n45.0\t780\t100\t116\n39.8\t690\t85\t109\n50.3\t820\t110\t122\n47.4\t800\t105\t118"
 
 met_example <- paste(
@@ -100,6 +124,9 @@ run_descriptive_analysis <- function(df, analysis_type, selected_vars = NULL, gr
     stop("Select at least one numeric variable.")
   }
 
+  # Missingness must be reviewed in Data Preparation before descriptive models.
+  review_observations(df, selected_vars, if (identical(analysis_type, "sumbygrp") && !is.null(group_var)) group_var else character())
+
   summary_table <- summarize_numeric_columns(df, selected_vars)
   by_group <- data.frame()
   plot_obj <- NULL
@@ -110,7 +137,7 @@ run_descriptive_analysis <- function(df, analysis_type, selected_vars = NULL, gr
       stop("Select a valid group variable for grouped summary.")
     }
     by_group <- df %>%
-      select(all_of(c(group_var, selected_vars))) %>%
+      dplyr::select(dplyr::all_of(c(group_var, selected_vars))) %>%
       pivot_longer(-all_of(group_var), names_to = "Variable", values_to = "Value") %>%
       group_by(across(all_of(group_var)), Variable) %>%
       summarise(
@@ -156,8 +183,8 @@ run_descriptive_analysis <- function(df, analysis_type, selected_vars = NULL, gr
     normality_res <- shapiro.test(values)
     normality <- c(
       sprintf("Variable: %s", analysis_var),
-      sprintf("W = %.4f", unname(normality_res$statistic)),
-      sprintf("p-value = %.4f", normality_res$p.value),
+      sprintf("W = %.3f", unname(normality_res$statistic)),
+      sprintf("p-value = %.3f", normality_res$p.value),
       if (normality_res$p.value >= 0.05) "The distribution is not significantly different from normal." else "The distribution deviates from normality."
     )
     plot_obj <- ggplot(df, aes_string(sample = analysis_var)) +
@@ -186,6 +213,8 @@ run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL
   if (is.null(value_var) || !value_var %in% names(df)) {
     stop("Select an outcome variable for the t-test.")
   }
+  review_vars <- if (identical(test_type, "paired")) c(pair_left, pair_right) else value_var
+  review_observations(df, review_vars, if (test_type %in% c("two-sample", "welch")) group_var else character())
 
   result_summary <- data.frame()
   variance_info <- data.frame()
@@ -202,7 +231,7 @@ run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL
     variance_info <- data.frame(Statistic = c("Hypothesized mean", "Alternative"), Value = c(mu, res$alternative), stringsAsFactors = FALSE)
     test_result <- data.frame(
       Statistic = c("t statistic", "df", "p value", "Mean difference", "95% lower", "95% upper", "Method"),
-      Value = c(round(res$statistic, 4), round(res$parameter, 2), round(res$p.value, 4), round(res$estimate - mu, 4), round(res$conf.int[1], 4), round(res$conf.int[2], 4), res$method),
+      Value = c(res$statistic, res$parameter, res$p.value, res$estimate - mu, res$conf.int[1] - mu, res$conf.int[2] - mu, res$method),
       stringsAsFactors = FALSE
     )
     plot_obj <- ggplot(data.frame(Value = x), aes(x = Value)) +
@@ -221,10 +250,10 @@ run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL
     res <- t.test(x ~ g, var.equal = test_type == "two-sample")
     result_summary <- df %>% group_by(.data[[group_var]]) %>% summarise(N = sum(!is.na(.data[[value_var]])), Mean = mean(.data[[value_var]], na.rm = TRUE), SD = sd(.data[[value_var]], na.rm = TRUE), .groups = "drop")
     variance <- var.test(x ~ g)
-    variance_info <- data.frame(Statistic = c("F statistic", "df1", "df2", "p value"), Value = c(round(variance$statistic, 4), variance$parameter[1], variance$parameter[2], round(variance$p.value, 4)), stringsAsFactors = FALSE)
+    variance_info <- data.frame(Statistic = c("F statistic", "df1", "df2", "p value"), Value = unname(c(variance$statistic, variance$parameter[1], variance$parameter[2], variance$p.value)), row.names = NULL, stringsAsFactors = FALSE)
     test_result <- data.frame(
       Statistic = c("t statistic", "df", "p value", "Mean difference", "95% lower", "95% upper", "Method"),
-      Value = c(round(res$statistic, 4), round(res$parameter, 2), round(res$p.value, 4), round(diff(res$estimate), 4), round(res$conf.int[1], 4), round(res$conf.int[2], 4), res$method),
+      Value = c(res$statistic, res$parameter, res$p.value, res$estimate[1] - res$estimate[2], res$conf.int[1], res$conf.int[2], res$method),
       stringsAsFactors = FALSE
     )
     plot_obj <- ggplot(df, aes_string(x = group_var, y = value_var, fill = group_var)) +
@@ -241,11 +270,11 @@ run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL
     if (length(na.omit(x)) < 3 || length(na.omit(y)) < 3) stop("Paired t-test requires at least 3 non-missing values in both columns.")
     paired_df <- data.frame(Left = x, Right = y)
     res <- t.test(paired_df$Left, paired_df$Right, paired = TRUE)
-    result_summary <- data.frame(Variable = c(pair_left, pair_right), Mean = c(mean(x, na.rm = TRUE), mean(y, na.rm = TRUE)), SD = c(sd(x, na.rm = TRUE), sd(y, na.rm = TRUE)), N = c(sum(!is.na(x)), sum(!is.na(y))), stringsAsFactors = FALSE)
+    result_summary <- data.frame(Variable = c(pair_left, pair_right), N = c(sum(!is.na(x)), sum(!is.na(y))), Mean = c(mean(x, na.rm = TRUE), mean(y, na.rm = TRUE)), SD = c(sd(x, na.rm = TRUE), sd(y, na.rm = TRUE)), stringsAsFactors = FALSE)
     variance_info <- data.frame(Statistic = c("Paired t-test"), Value = c(res$method), stringsAsFactors = FALSE)
     test_result <- data.frame(
       Statistic = c("t statistic", "df", "p value", "Mean difference", "95% lower", "95% upper", "Method"),
-      Value = c(round(res$statistic, 4), round(res$parameter, 2), round(res$p.value, 4), round(res$estimate[1] - res$estimate[2], 4), round(res$conf.int[1], 4), round(res$conf.int[2], 4), res$method),
+      Value = c(res$statistic, res$parameter, res$p.value, res$estimate, res$conf.int[1], res$conf.int[2], res$method),
       stringsAsFactors = FALSE
     )
     plot_obj <- ggplot(paired_df, aes(x = Left, y = Right)) +
@@ -257,6 +286,12 @@ run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL
     stop("Unsupported t-test type.")
   }
 
+  # Preserve inferential values as numeric columns; format only for presentation.
+  difference <- if(test_type == "one-sample") unname(res$estimate-mu) else if(test_type == "paired") unname(res$estimate) else unname(res$estimate[1]-res$estimate[2])
+  ci <- as.numeric(res$conf.int) - if(test_type == "one-sample") mu else 0
+  test_result <- data.frame(Contrast = if(test_type=="one-sample") paste(value_var,"minus",mu) else if(test_type=="paired") paste(pair_left,"minus",pair_right) else paste(levels(g),collapse=" minus "),
+    Estimate=difference, SE=unname(res$stderr), df=unname(res$parameter), LowerCI=ci[1], UpperCI=ci[2], t=unname(res$statistic), P= res$p.value,
+    Method=res$method, row.names = NULL, stringsAsFactors = FALSE)
   list(
     dataset = dataset,
     summary = result_summary,
@@ -266,11 +301,13 @@ run_ttest_analysis <- function(df, test_type, value_var = NULL, group_var = NULL
   )
 }
 
-format_anova_table <- function(model) {
+format_anova_table <- function(model, term_col = "Term") {
   out <- as.data.frame(anova(model))
-  out$Term <- rownames(out)
+  out[[term_col]] <- rownames(out)
   rownames(out) <- NULL
-  out
+  preferred <- c(term_col, "Df", "DF", "NumDF", "DenDF", "Sum Sq", "Mean Sq", "F value", "Pr(>F)")
+  cols <- c(intersect(preferred, names(out)), setdiff(names(out), preferred))
+  out[, cols, drop = FALSE]
 }
 
 run_multiple_comparison <- function(model, treatment_term, method = "LSD", alpha = 0.05) {
@@ -289,7 +326,6 @@ run_multiple_comparison <- function(model, treatment_term, method = "LSD", alpha
 }
 
 build_treatment_summary <- function(df_long, treatment_col = "Trt", alpha = 0.05) {
-  z_value <- qnorm(1 - alpha / 2)
   split_values <- split(df_long$Value, df_long[[treatment_col]])
 
   out <- do.call(rbind, lapply(names(split_values), function(name) {
@@ -300,12 +336,12 @@ build_treatment_summary <- function(df_long, treatment_col = "Trt", alpha = 0.05
     se_value <- sd_value / sqrt(n_value)
     data.frame(
       Treatment = name,
+      N = n_value,
       Mean = mean_value,
       SD = sd_value,
-      N = n_value,
       SE = se_value,
-      LowerCI = mean_value - z_value * se_value,
-      UpperCI = mean_value + z_value * se_value,
+      LowerCI = mean_value - qt(1-alpha/2,n_value-1) * se_value,
+      UpperCI = mean_value + qt(1-alpha/2,n_value-1) * se_value,
       stringsAsFactors = FALSE
     )
   }))
@@ -318,6 +354,8 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
   validate(need(ncol(df) >= 3, "Data must include a treatment column and at least two replication columns."))
   colnames(df)[1] <- "Trt"
   trt_order <- df$Trt
+  validate(need(!anyNA(trt_order) && all(nzchar(trimws(as.character(trt_order)))) && !anyDuplicated(trt_order), "Treatment identifiers must be nonempty and unique."))
+  validate(need(is.finite(alpha) && alpha>0 && alpha<1,"Alpha must be between 0 and 1."))
 
   if (design %in% c("Factorial CRD", "Factorial RBD")) {
     expected_rows <- levels_a * levels_b
@@ -328,6 +366,7 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
   df_long$Rep <- factor(df_long$Rep)
   df_long$Value <- as.numeric(df_long$Value)
   validate(need(!any(is.na(df_long$Value)), "All replication columns must be numeric."))
+  validate(need(all(is.finite(df_long$Value)), "Replication values must be finite."))
 
   if (design %in% c("Factorial CRD", "Factorial RBD")) {
     mapping <- data.frame(
@@ -361,13 +400,22 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
   grand_mean <- mean(df_long$Value)
   stats <- data.frame(
     Statistic = c("Replications detected", "Grand Mean", "Mean Square Error (MSE)", "Standard Error of Mean - SE(m)", "Standard Error of Difference - SE(d)", "Coefficient of Variation - CV (%)"),
-    Value = round(c(reps, grand_mean, mse, sqrt(mse / reps), sqrt(2 * mse / reps), (sqrt(mse) / grand_mean) * 100), 4),
+    Value = c(reps, grand_mean, mse, sqrt(mse / reps), sqrt(2 * mse / reps), if(grand_mean>0) (sqrt(mse) / grand_mean) * 100 else NA_real_),
     stringsAsFactors = FALSE
   )
 
   means <- comparison$means
   groups <- comparison$groups
   treatment_summary <- if (design %in% c("CRD", "RBD")) build_treatment_summary(df_long, "Trt", alpha = alpha) else NULL
+  if (!is.null(treatment_summary)) {
+    estimated <- as.data.frame(emmeans::emmeans(model,~Trt,level=1-alpha))
+    idx <- match(treatment_summary$Treatment,estimated$Trt)
+    treatment_summary$SE <- estimated$SE[idx]
+    treatment_summary$LowerCI <- estimated$lower.CL[idx]
+    treatment_summary$UpperCI <- estimated$upper.CL[idx]
+    treatment_summary$df <- estimated$df[idx]
+    treatment_summary <- treatment_summary[, c("Treatment", "N", "Mean", "SD", "SE", "df", "LowerCI", "UpperCI"), drop = FALSE]
+  }
 
   inference <- ""
   if (design %in% c("CRD", "RBD")) {
@@ -376,7 +424,7 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
       if (p_val <= alpha) {
         inference <- sprintf("Since the P-value in ANOVA table is <= %s, there is a significant difference between at least a pair of treatments, so multiple comparison is required to identify best treatment(s). Treatments with same letters are not significantly different.", alpha)
       } else {
-        inference <- "Treatment means are not significantly different. Multiple comparison test is not performed."
+        inference <- "The omnibus treatment test did not reject equal means. Pairwise comparisons are shown as exploratory results; shared letters indicate non-rejection, not equivalence."
       }
     }
   }
@@ -407,21 +455,24 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
     additive_anova <- format_anova_table(additive_model)
     interaction_p <- full_anova$`Pr(>F)`[full_anova$Term == "FactA:FactB"]
     interaction_p_value <- if (length(interaction_p) == 1) interaction_p[[1]] else NA_real_
-    use_additive_model <- !is.na(interaction_p_value) && interaction_p_value >= alpha
+    use_additive_model <- FALSE
     final_model <- if (use_additive_model) additive_model else full_model
     final_model_name <- if (use_additive_model) "Additive model" else "Interaction model"
 
-    emm_interaction <- emmeans::emmeans(full_model, ~ FactA * FactB)
-    emm_a <- emmeans::emmeans(additive_model, ~ FactA)
-    emm_b <- emmeans::emmeans(additive_model, ~ FactB)
+    emm_interaction <- emmeans::emmeans(full_model, ~ FactA * FactB, level=1-alpha)
+    emm_a <- emmeans::emmeans(full_model, ~ FactA, level=1-alpha)
+    emm_b <- emmeans::emmeans(full_model, ~ FactB, level=1-alpha)
 
     tukey_interaction <- as.data.frame(pairs(emm_interaction, adjust = "tukey"))
     tukey_a <- as.data.frame(pairs(emm_a, adjust = "tukey"))
     tukey_b <- as.data.frame(pairs(emm_b, adjust = "tukey"))
 
-    cld_interaction <- as.data.frame(multcomp::cld(emm_interaction, Letters = letters, adjust = "tukey"))
-    cld_a <- as.data.frame(multcomp::cld(emm_a, Letters = letters, adjust = "tukey"))
-    cld_b <- as.data.frame(multcomp::cld(emm_b, Letters = letters, adjust = "tukey"))
+    cld_interaction <- as.data.frame(multcomp::cld(emm_interaction, Letters = letters, adjust = "tukey", alpha=alpha, level=1-alpha))
+    cld_a <- as.data.frame(multcomp::cld(emm_a, Letters = letters, adjust = "tukey", alpha=alpha, level=1-alpha))
+    cld_b <- as.data.frame(multcomp::cld(emm_b, Letters = letters, adjust = "tukey", alpha=alpha, level=1-alpha))
+    rownames(cld_interaction) <- NULL
+    rownames(cld_a) <- NULL
+    rownames(cld_b) <- NULL
 
     boxplot_obj <- ggplot2::ggplot(df_long, ggplot2::aes(x = FactA, y = Value, fill = FactB)) +
       ggplot2::geom_boxplot() +
@@ -467,12 +518,12 @@ run_design_analysis <- function(df, design, levels_a = 2, levels_b = 2, alpha = 
       final_summary = capture.output(summary(final_model)),
       assumptions = data.frame(
         Metric = c("Alpha", "Interaction p-value", "Selected final model"),
-        Value = c(alpha, ifelse(is.na(interaction_p_value), "NA", round(interaction_p_value, 4)), final_model_name),
+        Value = c(alpha, ifelse(is.na(interaction_p_value), "NA", interaction_p_value), final_model_name),
         stringsAsFactors = FALSE
       ),
       shapiro = data.frame(
         Metric = c("W statistic", "p-value"),
-        Value = c(round(unname(shapiro_out$statistic), 4), round(shapiro_out$p.value, 4)),
+        Value = c(unname(shapiro_out$statistic), shapiro_out$p.value),
         stringsAsFactors = FALSE
       ),
       levene = levene_df,
@@ -547,13 +598,14 @@ run_design_layout <- function(
     validate(need(!is.null(rep) && rep >= 2, "CRD needs at least two replications."))
     trt_labels <- sprintf("T%s", seq_len(trt))
     fieldbook <- agricolae::design.crd(trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook$Treatment <- as.character(fieldbook[[ncol(fieldbook)]])
     fieldbook <- fieldbook[order(fieldbook$r), , drop = FALSE]
     fieldbook$ExperimentalUnit <- seq_len(nrow(fieldbook))
-    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = as.character(trtname))
+    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = Treatment)
     list(
       design = design,
       summary = data.frame(Treatments = trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
-      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, Treatment = fieldbook$Treatment, stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else if (identical(design, "RBD")) {
@@ -561,13 +613,14 @@ run_design_layout <- function(
     validate(need(!is.null(rep) && rep >= 2, "RBD needs at least two blocks."))
     trt_labels <- sprintf("T%s", seq_len(trt))
     fieldbook <- agricolae::design.rcbd(trt = trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook$Treatment <- as.character(fieldbook[[ncol(fieldbook)]])
     fieldbook <- fieldbook[order(fieldbook$block), , drop = FALSE]
     fieldbook$Plot <- ave(seq_len(nrow(fieldbook)), fieldbook$block, FUN = seq_along)
-    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = as.character(trtname))
+    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = Treatment)
     list(
       design = design,
       summary = data.frame(Treatments = trt, Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
-      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, Treatment = fieldbook$Treatment, stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else if (identical(design, "Factorial CRD")) {
@@ -578,14 +631,15 @@ run_design_layout <- function(
     factor_b_labels <- sprintf("B%s", seq_len(factor_b_trt))
     trt_labels <- as.vector(outer(factor_a_labels, factor_b_labels, paste0))
     fieldbook <- agricolae::design.crd(trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook$Treatment <- as.character(fieldbook[[ncol(fieldbook)]])
     fieldbook <- fieldbook[order(fieldbook$r), , drop = FALSE]
     fieldbook$ExperimentalUnit <- seq_len(nrow(fieldbook))
-    factors <- parse_factorial_treatment(fieldbook$trtname)
-    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = as.character(trtname))
+    factors <- parse_factorial_treatment(fieldbook$Treatment)
+    plot_data <- transform(fieldbook, row = 1, col = ExperimentalUnit, label = Treatment)
     list(
       design = design,
       summary = data.frame(FactorALevels = factor_a_trt, FactorBLevels = factor_b_trt, Treatments = length(trt_labels), Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
-      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      fieldbook = data.frame(ExperimentalUnit = fieldbook$ExperimentalUnit, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = fieldbook$Treatment, stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else if (identical(design, "Factorial RBD")) {
@@ -596,14 +650,15 @@ run_design_layout <- function(
     factor_b_labels <- sprintf("B%s", seq_len(factor_b_trt))
     trt_labels <- as.vector(outer(factor_a_labels, factor_b_labels, paste0))
     fieldbook <- agricolae::design.rcbd(trt = trt_labels, r = rep, seed = seed, serie = 0, kinds = kind, randomization = TRUE)$book
+    fieldbook$Treatment <- as.character(fieldbook[[ncol(fieldbook)]])
     fieldbook <- fieldbook[order(fieldbook$block), , drop = FALSE]
     fieldbook$Plot <- ave(seq_len(nrow(fieldbook)), fieldbook$block, FUN = seq_along)
-    factors <- parse_factorial_treatment(fieldbook$trtname)
-    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = as.character(trtname))
+    factors <- parse_factorial_treatment(fieldbook$Treatment)
+    plot_data <- transform(fieldbook, block_num = as.numeric(block), plot_num = Plot, label = Treatment)
     list(
       design = design,
       summary = data.frame(FactorALevels = factor_a_trt, FactorBLevels = factor_b_trt, Treatments = length(trt_labels), Blocks = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
-      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = as.character(fieldbook$trtname), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Block = as.character(fieldbook$block), Plot = fieldbook$Plot, FactorA = factors$FactorA, FactorB = factors$FactorB, Treatment = fieldbook$Treatment, stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else if (identical(design, "Augmented RCBD")) {
@@ -629,20 +684,23 @@ run_design_layout <- function(
     main_labels <- sprintf("A%s", seq_len(main_trt))
     sub_labels <- sprintf("B%s", seq_len(sub_trt))
     fieldbook <- agricolae::design.split(main_labels, sub_labels, r = rep, serie = 0, seed = seed, kinds = kind, randomization = TRUE)$book
+    treatment_columns <- tail(names(fieldbook), 2L)
+    fieldbook$MainTreatment <- as.character(fieldbook[[treatment_columns[[1L]]]])
+    fieldbook$SubTreatment <- as.character(fieldbook[[treatment_columns[[2L]]]])
     fieldbook <- fieldbook[order(fieldbook$block, fieldbook$plots, fieldbook$splots), , drop = FALSE]
     plot_data <- transform(
       fieldbook,
       rep_num = as.numeric(block),
       main_num = as.numeric(plots),
       sub_num = as.numeric(splots),
-      main_treatment = as.character(main),
-      sub_treatment = as.character(sub),
-      label = sprintf("%s/%s", as.character(main), as.character(sub))
+      main_treatment = MainTreatment,
+      sub_treatment = SubTreatment,
+      label = sprintf("%s/%s", MainTreatment, SubTreatment)
     )
     list(
       design = design,
       summary = data.frame(MainPlotTreatments = main_trt, SubPlotTreatments = sub_trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
-      fieldbook = data.frame(Replication = as.character(fieldbook$block), MainPlot = fieldbook$plots, SubPlot = fieldbook$splots, MainTreatment = as.character(fieldbook$main), SubTreatment = as.character(fieldbook$sub), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Replication = as.character(fieldbook$block), MainPlot = fieldbook$plots, SubPlot = fieldbook$splots, MainTreatment = fieldbook$MainTreatment, SubTreatment = fieldbook$SubTreatment, stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else if (identical(design, "Strip Plot")) {
@@ -652,15 +710,16 @@ run_design_layout <- function(
     main_labels <- sprintf("A%s", seq_len(main_trt))
     sub_labels <- sprintf("B%s", seq_len(sub_trt))
     fieldbook <- agricolae::design.strip(main_labels, sub_labels, r = rep, serie = 0, seed = seed, kinds = kind, randomization = TRUE)$book
-    fieldbook$row_key <- do.call(paste, as.data.frame(t(apply(fieldbook[4:5], 1, sort))))
-    fieldbook$col_key <- do.call(paste, as.data.frame(t(apply(fieldbook[2:3], 1, sort))))
-    fieldbook$Row <- match(fieldbook$row_key, unique(fieldbook$row_key))
-    fieldbook$Column <- match(fieldbook$col_key, unique(fieldbook$col_key))
-    plot_data <- transform(fieldbook, rep_num = as.numeric(block), row_num = Row, col_num = Column, label = sprintf("%s/%s", as.character(main1), as.character(main2)))
+    treatment_columns <- tail(names(fieldbook), 2L)
+    fieldbook$HorizontalTreatment <- as.character(fieldbook[[treatment_columns[[1L]]]])
+    fieldbook$VerticalTreatment <- as.character(fieldbook[[treatment_columns[[2L]]]])
+    fieldbook$Row <- match(fieldbook$HorizontalTreatment, unique(fieldbook$HorizontalTreatment))
+    fieldbook$Column <- match(fieldbook$VerticalTreatment, unique(fieldbook$VerticalTreatment))
+    plot_data <- transform(fieldbook, rep_num = as.numeric(block), row_num = Row, col_num = Column, label = sprintf("%s/%s", HorizontalTreatment, VerticalTreatment))
     list(
       design = design,
       summary = data.frame(HorizontalTreatments = main_trt, VerticalTreatments = sub_trt, Replications = rep, ExperimentalUnits = nrow(fieldbook), stringsAsFactors = FALSE),
-      fieldbook = data.frame(Replication = as.character(fieldbook$block), Row = fieldbook$Row, Column = fieldbook$Column, HorizontalTreatment = as.character(fieldbook$main1), VerticalTreatment = as.character(fieldbook$main2), stringsAsFactors = FALSE),
+      fieldbook = data.frame(Replication = as.character(fieldbook$block), Row = fieldbook$Row, Column = fieldbook$Column, HorizontalTreatment = fieldbook$HorizontalTreatment, VerticalTreatment = fieldbook$VerticalTreatment, stringsAsFactors = FALSE),
       plot_data = plot_data
     )
   } else {
@@ -676,11 +735,13 @@ run_pooled_anova <- function(df, alpha = 0.05) {
     df$Rep <- "R1"
   }
 
-  df <- df %>%
-    mutate(Season = factor(Season), Rep = factor(Rep), Treatment = factor(Treatment), Value = as.numeric(Value))
-  validate(need(!any(is.na(df$Value)), "Value must be numeric."))
+  df <- review_observations(df,"Value",c("Season","Rep","Treatment"))$data
+  validate(need(nlevels(df$Season)>=2 && nlevels(df$Treatment)>=2,"At least two seasons and treatments are required."))
+  validate(need(!anyDuplicated(df[c("Season","Rep","Treatment")]),"Duplicate Season/Rep/Treatment units are not independent replications."))
+  validate(need(all(table(df$Season,df$Treatment)>0),"Every treatment must occur in every season."))
 
   season_models <- lapply(split(df, df$Season), function(part) {
+    part <- droplevels(part)
     if (nlevels(part$Rep) > 1) aov(Value ~ Rep + Treatment, data = part) else aov(Value ~ Treatment, data = part)
   })
 
@@ -690,21 +751,249 @@ run_pooled_anova <- function(df, alpha = 0.05) {
     stringsAsFactors = FALSE
   )
 
-  homogeneity <- bartlett.test(Value ~ Season, data = df)
-  pooled_model <- aov(Value ~ Season + Season:Rep + Treatment + Season:Treatment, data = df)
+  error_summary$ErrorDF <- vapply(season_models, df.residual, numeric(1))
+  validate(need(all(error_summary$ErrorDF > 0), "Each season needs residual degrees of freedom to assess error variance."))
+  residual_data <- do.call(rbind, lapply(names(season_models), function(s) data.frame(Season = s, Residual = residuals(season_models[[s]]))))
+  residual_data$Season <- factor(residual_data$Season)
+  homogeneity <- car::leveneTest(Residual ~ Season, data = residual_data, center = median)
+  pooled_model <- if (nlevels(df$Rep) > 1) aov(Value ~ Season + Season:Rep + Treatment + Season:Treatment, data = df) else aov(Value ~ Season * Treatment, data = df)
 
   list(
     dataset = df,
     anova = format_anova_table(pooled_model),
     error_summary = error_summary,
     homogeneity = data.frame(
-      Metric = c("Bartlett K-squared", "df", "p-value", "Pool errors"),
-      Value = c(round(unname(homogeneity$statistic), 4), homogeneity$parameter, round(homogeneity$p.value, 4), ifelse(homogeneity$p.value >= alpha, "Yes", "Investigate before pooling")),
+      Metric = c("Residual median-centred Levene F", "df", "p-value", "Interpretation"),
+      Value = c(homogeneity[1, "F value"], homogeneity[1, "Df"], homogeneity[1, "Pr(>F)"], "Diagnostic only: inspect residuals and experimental design before pooling."),
       stringsAsFactors = FALSE
     ),
     treatment_means = df %>% group_by(Treatment) %>% summarise(Mean = mean(Value), .groups = "drop"),
     season_treatment_means = df %>% group_by(Season, Treatment) %>% summarise(Mean = mean(Value), .groups = "drop"),
-    report_note = sprintf("Pooled across %s seasons at alpha %.2f", nlevels(df$Season), alpha)
+    report_note = sprintf("Pooled across %s seasons at alpha %.2f. Fixed season, treatment and nested block model with sequential sums of squares; inference is conditional on the observed seasons. Residual Levene test is diagnostic only.", nlevels(df$Season), alpha)
+  )
+}
+
+run_pooled_split_plot <- function(
+  df,
+  year_var = "Year",
+  rep_var = "Rep",
+  mainplot_var = "MainPlot",
+  subplot_var = "SubPlot",
+  response_var = "Value",
+  alpha = 0.05,
+  include_pwpp = FALSE
+) {
+  required_packages <- c("lme4", "lmerTest", "emmeans", "ggplot2")
+  missing_packages <- required_packages[!vapply(required_packages, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
+  if (length(missing_packages) > 0) {
+    stop(sprintf("Missing package(s): %s.", paste(missing_packages, collapse = ", ")), call. = FALSE)
+  }
+
+  selected_columns <- c(year_var, rep_var, mainplot_var, subplot_var, response_var)
+  if (any(is.na(selected_columns)) || any(!nzchar(selected_columns)) || length(unique(selected_columns)) != 5) {
+    stop("Year, Rep, MainPlot, SubPlot, and response variables must be five different columns.", call. = FALSE)
+  }
+  if (!all(selected_columns %in% names(df))) {
+    stop("Selected Year, Rep, MainPlot, SubPlot, or response column was not found in the dataset.", call. = FALSE)
+  }
+  if (!is.numeric(alpha) || length(alpha) != 1 || is.na(alpha) || alpha <= 0 || alpha >= 1) {
+    stop("Alpha must be a single value between 0 and 1.", call. = FALSE)
+  }
+
+  data <- df[, selected_columns, drop = FALSE]
+  names(data) <- c("Year", "Rep", "MainPlot", "SubPlot", "Value")
+  if (nrow(data) == 0) {
+    stop("Input dataset is empty.", call. = FALSE)
+  }
+  if (any(vapply(data[c("Year", "Rep", "MainPlot", "SubPlot")], function(x) any(is.na(x) | trimws(as.character(x)) == ""), logical(1)))) {
+    stop("Year, Rep, MainPlot, and SubPlot cannot contain missing or blank values.", call. = FALSE)
+  }
+
+  data$Value <- suppressWarnings(as.numeric(data$Value))
+  if (any(!is.finite(data$Value))) {
+    stop("Response values must be finite numeric values.", call. = FALSE)
+  }
+  data[c("Year", "Rep", "MainPlot", "SubPlot")] <- lapply(
+    data[c("Year", "Rep", "MainPlot", "SubPlot")],
+    function(x) factor(trimws(as.character(x)))
+  )
+
+  if (anyDuplicated(data[c("Year", "Rep", "MainPlot", "SubPlot")])) {
+    stop("Each Year/Rep/MainPlot/SubPlot combination must occur exactly once.", call. = FALSE)
+  }
+
+  n_year <- nlevels(data$Year)
+  n_main <- nlevels(data$MainPlot)
+  n_sub <- nlevels(data$SubPlot)
+  if (n_year < 2 || n_main < 2 || n_sub < 2) {
+    stop("Pooled Split-RCBD requires at least two years and two levels of each treatment factor.", call. = FALSE)
+  }
+
+  rep_counts <- vapply(split(data$Rep, data$Year), function(x) nlevels(droplevels(x)), integer(1))
+  if (any(rep_counts < 2) || length(unique(rep_counts)) != 1) {
+    stop("Each year must have the same number of replications, with at least two replications per year.", call. = FALSE)
+  }
+
+  main_levels_by_year <- lapply(split(data$MainPlot, data$Year), function(x) levels(droplevels(x)))
+  sub_levels_by_year <- lapply(split(data$SubPlot, data$Year), function(x) levels(droplevels(x)))
+  if (!all(vapply(main_levels_by_year, identical, logical(1), main_levels_by_year[[1]])) ||
+      !all(vapply(sub_levels_by_year, identical, logical(1), sub_levels_by_year[[1]]))) {
+    stop("Every year must contain the same MainPlot and SubPlot treatment levels.", call. = FALSE)
+  }
+
+  expected_rows <- n_year * rep_counts[[1]] * n_main * n_sub
+  if (nrow(data) != expected_rows) {
+    stop("Data must be balanced: every Year/Rep/MainPlot/SubPlot cell needs one observation.", call. = FALSE)
+  }
+
+  full_model <- lmerTest::lmer(
+    Value ~ Year + (1 | Year:Rep) + MainPlot * SubPlot + Year:(MainPlot * SubPlot) + (1 | Year:Rep:MainPlot),
+    data = data
+  )
+
+  anova_table <- as.data.frame(stats::anova(full_model, type = 3, ddf = "Satterthwaite"))
+  anova_table$Effect <- rownames(anova_table)
+  rownames(anova_table) <- NULL
+  preferred_anova <- c("Effect", "NumDF", "DenDF", "Sum Sq", "Mean Sq", "F value", "Pr(>F)")
+  anova_table <- anova_table[, c(intersect(preferred_anova, names(anova_table)), setdiff(names(anova_table), preferred_anova)), drop = FALSE]
+
+  make_lsd_table <- function(emm_grid) {
+    contrasts <- emmeans::contrast(emm_grid, method = "pairwise", adjust = "none")
+    result <- as.data.frame(summary(contrasts, infer = c(TRUE, TRUE), level = 1 - alpha))
+    result$Critical_t <- stats::qt(1 - alpha / 2, df = result$df)
+    result$CD <- result$SE * result$Critical_t
+    rownames(result) <- NULL
+    stat_cols <- c("estimate", "SE", "df", "Critical_t", "CD", "lower.CL", "upper.CL", "t.ratio", "p.value")
+    id_cols <- setdiff(names(result), stat_cols)
+    id_cols <- c(setdiff(id_cols, "contrast"), intersect("contrast", id_cols))
+    result[, c(id_cols, intersect(stat_cols, names(result))), drop = FALSE]
+  }
+  summarize_cd_family <- function(label, pairwise_table) {
+    data.frame(
+      Comparison = label,
+      Comparisons = nrow(pairwise_table),
+      `Minimum CD` = min(pairwise_table$CD),
+      `Maximum CD` = max(pairwise_table$CD),
+      `Mean CD` = mean(pairwise_table$CD),
+      `Minimum df` = min(pairwise_table$df),
+      `Maximum df` = max(pairwise_table$df),
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  emm_main <- emmeans::emmeans(full_model, ~ MainPlot, lmer.df = "satterthwaite")
+  emm_sub <- emmeans::emmeans(full_model, ~ SubPlot, lmer.df = "satterthwaite")
+  emm_interaction <- emmeans::emmeans(full_model, ~ MainPlot * SubPlot, lmer.df = "satterthwaite")
+  emm_sub_within_main <- emmeans::emmeans(full_model, ~ SubPlot | MainPlot, lmer.df = "satterthwaite")
+  emm_main_within_sub <- emmeans::emmeans(full_model, ~ MainPlot | SubPlot, lmer.df = "satterthwaite")
+
+  lsd_main <- make_lsd_table(emm_main)
+  lsd_sub <- make_lsd_table(emm_sub)
+  lsd_interaction <- make_lsd_table(emm_interaction)
+  lsd_sub_within_main <- make_lsd_table(emm_sub_within_main)
+  lsd_main_within_sub <- make_lsd_table(emm_main_within_sub)
+  cd_summary <- do.call(
+    rbind,
+    list(
+      summarize_cd_family("Main plot means", lsd_main),
+      summarize_cd_family("Subplot means", lsd_sub),
+      summarize_cd_family("Subplot means within main plot", lsd_sub_within_main),
+      summarize_cd_family("Main-plot means within subplot", lsd_main_within_sub)
+    )
+  )
+  cd_summary[, 3:7] <- cd_summary[, 3:7]
+
+  main_means <- as.data.frame(summary(emm_main, infer = c(TRUE, TRUE), level = 1 - alpha))
+  sub_means <- as.data.frame(summary(emm_sub, infer = c(TRUE, TRUE), level = 1 - alpha))
+  interaction_means <- as.data.frame(summary(emm_interaction, infer = c(TRUE, TRUE), level = 1 - alpha))
+
+  residuals_final <- residuals(full_model)
+  fitted_final <- fitted(full_model)
+  diagnostics <- data.frame(
+    Observation = seq_along(residuals_final),
+    Fitted = fitted_final,
+    Residual = residuals_final,
+    stringsAsFactors = FALSE
+  )
+  normality <- if (length(residuals_final) >= 3 && length(residuals_final) <= 5000) stats::shapiro.test(residuals_final) else NULL
+  random_effect_variance <- as.data.frame(lme4::VarCorr(full_model))
+  fixed_effects <- as.data.frame(summary(full_model)$coefficients)
+  fixed_effects$Effect <- rownames(fixed_effects)
+  rownames(fixed_effects) <- NULL
+  fixed_effects <- fixed_effects[, c("Effect", setdiff(names(fixed_effects), "Effect")), drop = FALSE]
+
+  interaction_plot <- ggplot2::ggplot(interaction_means, ggplot2::aes(x = MainPlot, y = emmean, color = SubPlot, group = SubPlot)) +
+    ggplot2::geom_line(linewidth = 0.8) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Pooled Split-RCBD Interaction Means", x = "Main plot", y = "Estimated mean", color = "Subplot")
+  main_plot <- ggplot2::ggplot(main_means, ggplot2::aes(x = MainPlot, y = emmean, ymin = lower.CL, ymax = upper.CL)) +
+    ggplot2::geom_pointrange(color = "#1f4d3b") +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Pooled Main-Plot Means", x = "Main plot", y = "Estimated mean")
+  sub_plot <- ggplot2::ggplot(sub_means, ggplot2::aes(x = SubPlot, y = emmean, ymin = lower.CL, ymax = upper.CL)) +
+    ggplot2::geom_pointrange(color = "#7a5c1e") +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Pooled Subplot Means", x = "Subplot", y = "Estimated mean")
+  residual_plot <- ggplot2::ggplot(diagnostics, ggplot2::aes(x = Fitted, y = Residual)) +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "#7a5c1e") +
+    ggplot2::geom_point(color = "#1f4d3b") +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Residuals vs Fitted", x = "Fitted values", y = "Residuals")
+  residual_qq_plot <- ggplot2::ggplot(diagnostics, ggplot2::aes(sample = Residual)) +
+    ggplot2::stat_qq(color = "#1f4d3b") +
+    ggplot2::stat_qq_line(color = "#7a1e1e") +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = "Residual Q-Q Plot")
+  pwpp_plot <- if (isTRUE(include_pwpp)) emmeans::pwpp(emm_interaction, adjust = "none") else NULL
+
+  model_info <- data.frame(
+    Metric = c("Formula", "Degrees of freedom", "Comparison method", "CD formula", "Years", "Replications per year", "Main-plot levels", "Subplot levels", "Residual normality p-value"),
+    Value = c(
+      paste(deparse(stats::formula(full_model)), collapse = " "),
+      "Satterthwaite",
+      "Fisher LSD (unadjusted pairwise contrasts)",
+      "qt(1 - alpha / 2, df) * SE",
+      n_year,
+      rep_counts[[1]],
+      n_main,
+      n_sub,
+      if (is.null(normality)) "Not computed" else report_number(normality$p.value, p = TRUE)
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  list(
+    dataset = data,
+    model = full_model,
+    formula = stats::formula(full_model),
+    anova = anova_table,
+    model_info = model_info,
+    fixed_effects = fixed_effects,
+    random_effect_variance = random_effect_variance,
+    main_means = main_means,
+    sub_means = sub_means,
+    interaction_means = interaction_means,
+    cd_summary = cd_summary,
+    lsd_main = lsd_main,
+    lsd_sub = lsd_sub,
+    lsd_interaction = lsd_interaction,
+    lsd_sub_within_main = lsd_sub_within_main,
+    lsd_main_within_sub = lsd_main_within_sub,
+    diagnostics = diagnostics,
+    model_summary = capture.output(summary(full_model)),
+    interaction_plot = interaction_plot,
+    main_plot = main_plot,
+    sub_plot = sub_plot,
+    residual_plot = residual_plot,
+    residual_qq_plot = residual_qq_plot,
+    pwpp_plot = pwpp_plot,
+    report_note = sprintf(
+      "Pooled Split-RCBD mixed model across %s years with %s replications per year; Fisher LSD contrasts use Satterthwaite degrees of freedom.",
+      n_year,
+      rep_counts[[1]]
+    )
   )
 }
 
@@ -780,15 +1069,15 @@ split_plot_analysis <- function(data, alpha = 0.05) {
     ),
     `Pr(>F)` = c(
       NA,
-      ifelse(main_tab$`Pr(>F)`[1] < 0.001, "<0.001", round(main_tab$`Pr(>F)`[1], 4)),
+      main_tab$`Pr(>F)`[1],
       NA,
-      ifelse(sub_tab$`Pr(>F)`[1] < 0.001, "<0.001", round(sub_tab$`Pr(>F)`[1], 4)),
-      ifelse(sub_tab$`Pr(>F)`[2] < 0.001, "<0.001", round(sub_tab$`Pr(>F)`[2], 4)),
+      sub_tab$`Pr(>F)`[1],
+      sub_tab$`Pr(>F)`[2],
       NA
     ),
     stringsAsFactors = FALSE
   )
-  anova_table[, 2:5] <- round(anova_table[, 2:5], 3)
+
 
   Ea <- main_tab$`Mean Sq`[2]
   dfa <- main_tab$Df[2]
@@ -811,7 +1100,8 @@ split_plot_analysis <- function(data, alpha = 0.05) {
   SEm_interaction <- sqrt((2 * Eb) / r)
   LSD_interaction <- t_b * SEm_interaction
 
-  tw <- (((b - 1) * Eb * t_b) + (Ea * t_a)) / (((b - 1) * Eb) + Ea)
+  mixed_df <- (Ea+(b-1)*Eb)^2 / (Ea^2/dfa + ((b-1)*Eb)^2/dfb)
+  tw <- qt(1-alpha/2,mixed_df)
   SEm_type4 <- sqrt((2 * (((b - 1) * Eb) + Ea)) / (r * b))
   LSD_type4 <- tw * SEm_type4
 
@@ -860,6 +1150,7 @@ split_plot_analysis <- function(data, alpha = 0.05) {
         ErrorB = Eb,
         DFa = dfa,
         DFb = dfb,
+        SatterthwaiteDF = mixed_df,
         Weighted_t_value = tw,
         SED = SEm_type4,
         LSD = LSD_type4
@@ -886,71 +1177,40 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
     )
   ))
 
-  rename_map <- c(W = "Rep", A = "MainPlot", B = "SubPlot", Y = "Value")
-  for (old_name in names(rename_map)) {
-    new_name <- rename_map[[old_name]]
-    if (old_name %in% names(df) && !(new_name %in% names(df))) {
-      names(df)[names(df) == old_name] <- new_name
-    }
-  }
-
-  if (!identical(rep_var, "Rep") && !is.null(rep_var) && rep_var %in% names(df)) {
-    if (!("Rep" %in% names(df))) names(df)[names(df) == rep_var] <- "Rep"
-  }
-  if (!identical(mainplot_var, "MainPlot") && !is.null(mainplot_var) && mainplot_var %in% names(df)) {
-    if (!("MainPlot" %in% names(df))) names(df)[names(df) == mainplot_var] <- "MainPlot"
-  }
-  if (!identical(subplot_var, "SubPlot") && !is.null(subplot_var) && subplot_var %in% names(df)) {
-    if (!("SubPlot" %in% names(df))) names(df)[names(df) == subplot_var] <- "SubPlot"
-  }
-  if (!identical(response_var, "Value") && !is.null(response_var) && response_var %in% names(df)) {
-    if (!("Value" %in% names(df))) names(df)[names(df) == response_var] <- "Value"
-  }
-
-  if (is.null(df) || ncol(df) == 0) {
-    validate(need(FALSE, "Input dataset is empty or invalid."))
-  }
-
-  required <- c("Rep", "MainPlot", "SubPlot", "Value")
-  validate(need(all(required %in% names(df)), "Columns Rep/MainPlot/SubPlot/Value or W/A/B/Y are required."))
-
-  df <- df %>%
-    mutate(
-      Rep = factor(Rep),
-      MainPlot = factor(MainPlot),
-      SubPlot = factor(SubPlot),
-      Value = as.numeric(Value)
-    )
-  validate(need(!any(is.na(df$Value)), "Value must be numeric."))
+  selected <- c(rep_var,mainplot_var,subplot_var,response_var)
+  aliases <- c(Rep="W",MainPlot="A",SubPlot="B",Value="Y")
+  selected <- vapply(selected,function(nm) if(nm %in% names(df)) nm else if(nm %in% names(aliases)) aliases[[nm]] else nm,character(1))
+  validate(need(length(unique(selected))==4 && all(selected %in% names(df)),"Choose four distinct columns for Rep/MainPlot/SubPlot/Value (or W/A/B/Y)."))
+  df <- df[,selected,drop=FALSE];names(df)<-c("Rep","MainPlot","SubPlot","Value")
+  df <- review_observations(df,"Value",c("Rep","MainPlot","SubPlot"))$data
+  validate(need(!anyDuplicated(df[c("Rep","MainPlot","SubPlot")]) && all(table(df$Rep,df$MainPlot,df$SubPlot)==1),"A complete balanced split-plot layout with one observation per experimental unit is required."))
+  validate(need(all(vapply(df[c("Rep","MainPlot","SubPlot")],nlevels,integer(1))>=2),"Split plots require at least two replications and two levels of each factor."))
 
   full_model <- lmerTest::lmer(Value ~ MainPlot * SubPlot + (1 | Rep/MainPlot), data = df)
   additive_model <- lmerTest::lmer(Value ~ MainPlot + SubPlot + (1 | Rep/MainPlot), data = df)
 
   split_results <- split_plot_analysis(df, alpha = alpha)
 
-  full_anova <- as.data.frame(anova(full_model))
-  full_anova$Effect <- rownames(full_anova)
-  rownames(full_anova) <- NULL
-
-  additive_anova <- as.data.frame(anova(additive_model))
-  additive_anova$Effect <- rownames(additive_anova)
-  rownames(additive_anova) <- NULL
+  full_anova <- format_anova_table(full_model, term_col = "Effect")
+  additive_anova <- format_anova_table(additive_model, term_col = "Effect")
 
   interaction_p <- full_anova$`Pr(>F)`[full_anova$Effect == "MainPlot:SubPlot"]
   interaction_p_value <- if (length(interaction_p) == 1) interaction_p[[1]] else NA_real_
-  use_additive_model <- !is.na(interaction_p_value) && interaction_p_value >= alpha
+  use_additive_model <- FALSE
   final_model <- if (use_additive_model) additive_model else full_model
   final_model_name <- if (use_additive_model) "Additive model" else "Interaction model"
 
-  emm_main <- emmeans::emmeans(final_model, ~ MainPlot)
-  emm_sub <- emmeans::emmeans(final_model, ~ SubPlot)
-  emm_interaction <- emmeans::emmeans(full_model, ~ MainPlot * SubPlot)
+  emm_main <- emmeans::emmeans(final_model, ~ MainPlot, level=1-alpha)
+  emm_sub <- emmeans::emmeans(final_model, ~ SubPlot, level=1-alpha)
+  emm_interaction <- emmeans::emmeans(full_model, ~ MainPlot * SubPlot, level=1-alpha)
 
   tukey_main <- as.data.frame(pairs(emm_main, adjust = "tukey"))
   tukey_sub <- as.data.frame(pairs(emm_sub, adjust = "tukey"))
 
-  cld_main <- as.data.frame(multcomp::cld(emm_main, Letters = letters, adjust = "tukey"))
-  cld_sub <- as.data.frame(multcomp::cld(emm_sub, Letters = letters, adjust = "tukey"))
+  cld_main <- as.data.frame(multcomp::cld(emm_main, Letters = letters, adjust = "tukey", alpha=alpha, level=1-alpha))
+  cld_sub <- as.data.frame(multcomp::cld(emm_sub, Letters = letters, adjust = "tukey", alpha=alpha, level=1-alpha))
+  rownames(cld_main) <- NULL
+  rownames(cld_sub) <- NULL
 
   boxplot_obj <- ggplot2::ggplot(df, ggplot2::aes(x = MainPlot, y = Value, fill = SubPlot)) +
     ggplot2::geom_boxplot() +
@@ -981,13 +1241,13 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
     ggplot2::geom_col(fill = "#8bb174") +
     ggplot2::geom_errorbar(ggplot2::aes(ymin = Mean - split_results$LSD$MainPlot$LSD / 2, ymax = Mean + split_results$LSD$MainPlot$LSD / 2), width = 0.2, color = "#335633") +
     ggplot2::theme_minimal() +
-    ggplot2::labs(title = "Main Plot Means with LSD", x = "Main Plot", y = "Mean")
+    ggplot2::labs(title = "Main plot means: half-LSD bars (not confidence intervals)", x = "Main Plot", y = "Mean")
 
   lsd_sub_plot <- ggplot2::ggplot(split_results$SubPlotMeans, ggplot2::aes(x = SubPlot, y = Mean)) +
     ggplot2::geom_col(fill = "#c1974f") +
     ggplot2::geom_errorbar(ggplot2::aes(ymin = Mean - split_results$LSD$SubPlot$LSD / 2, ymax = Mean + split_results$LSD$SubPlot$LSD / 2), width = 0.2, color = "#5f4623") +
     ggplot2::theme_minimal() +
-    ggplot2::labs(title = "Subplot Means with LSD", x = "Subplot", y = "Mean")
+    ggplot2::labs(title = "Subplot means: half-LSD bars (not confidence intervals)", x = "Subplot", y = "Mean")
 
   split_interaction_mean_plot <- ggplot2::ggplot(split_results$InteractionMeans, ggplot2::aes(x = MainPlot, y = Mean, color = SubPlot, group = SubPlot)) +
     ggplot2::geom_line(size = 0.8) +
@@ -1003,40 +1263,40 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
       "Main-plot means at same/different subplot levels"
     ),
     `Error MS` = c(
-      round(split_results$LSD$MainPlot$ErrorMS, 4),
-      round(split_results$LSD$SubPlot$ErrorMS, 4),
-      round(split_results$LSD$Interaction$ErrorMS, 4),
+      report_number(split_results$LSD$MainPlot$ErrorMS),
+      report_number(split_results$LSD$SubPlot$ErrorMS),
+      report_number(split_results$LSD$Interaction$ErrorMS),
       sprintf(
         "Ea: %s; Eb: %s",
-        round(split_results$LSD$Interaction2$ErrorA, 4),
-        round(split_results$LSD$Interaction2$ErrorB, 4)
+        report_number(split_results$LSD$Interaction2$ErrorA),
+        report_number(split_results$LSD$Interaction2$ErrorB)
       )
     ),
     DF = c(
-      split_results$LSD$MainPlot$DF,
-      split_results$LSD$SubPlot$DF,
-      split_results$LSD$Interaction$DF,
+      report_number(split_results$LSD$MainPlot$DF, count = TRUE),
+      report_number(split_results$LSD$SubPlot$DF, count = TRUE),
+      report_number(split_results$LSD$Interaction$DF, count = TRUE),
       sprintf(
         "DFa: %s; DFb: %s",
-        split_results$LSD$Interaction2$DFa,
-        split_results$LSD$Interaction2$DFb
+        report_number(split_results$LSD$Interaction2$DFa, count = TRUE),
+        report_number(split_results$LSD$Interaction2$DFb, count = TRUE)
       )
     ),
-    `SE(m)` = round(c(
+    `SE(d)` = c(
       split_results$LSD$MainPlot$SED,
       split_results$LSD$SubPlot$SED,
       split_results$LSD$Interaction$SED,
       split_results$LSD$Interaction2$SED
-    ), 4),
-    CD = round(c(
+    ),
+    CD = c(
       split_results$LSD$MainPlot$LSD,
       split_results$LSD$SubPlot$LSD,
       split_results$LSD$Interaction$LSD,
       split_results$LSD$Interaction2$LSD
-    ), 4),
+    ),
     `CV (%)` = c(
-      round(split_results$CV$MainPlotCV, 4),
-      round(split_results$CV$SubPlotCV, 4),
+      split_results$CV$MainPlotCV,
+      split_results$CV$SubPlotCV,
       NA,
       NA
     ),
@@ -1058,7 +1318,7 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
 
   assumptions <- data.frame(
     Metric = c("Alpha", "Interaction p-value", "Selected final model", "Random effect"),
-    Value = c(alpha, ifelse(is.na(interaction_p_value), "NA", round(interaction_p_value, 4)), final_model_name, "Replication/block as random intercept"),
+    Value = c(alpha, ifelse(is.na(interaction_p_value), "NA", interaction_p_value), final_model_name, "Replication/block as random intercept"),
     stringsAsFactors = FALSE
   )
 
@@ -1097,35 +1357,68 @@ run_split_plot <- function(df, rep_var = "Rep", mainplot_var = "MainPlot", subpl
   )
 }
 
-run_correlation_regression <- function(df, response, predictors) {
+run_correlation_regression <- function(df, response, predictors, exclude_missing = FALSE) {
   numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
   validate(need(length(numeric_cols) >= 2, "At least two numeric columns are required."))
   validate(need(response %in% numeric_cols, "Choose a numeric response variable."))
   validate(need(length(predictors) >= 1, "Choose at least one numeric predictor."))
   selected_predictors <- unique(setdiff(predictors, response))
   validate(need(length(selected_predictors) >= 1, "Choose at least one predictor different from the response variable."))
+  validate(need(all(selected_predictors %in% numeric_cols), "Choose numeric predictor columns."))
 
   numeric_df <- df[, unique(c(response, selected_predictors)), drop = FALSE]
-  corr <- round(cor(numeric_df, use = "complete.obs"), 4)
-  formula_text <- sprintf("%s ~ %s", response, paste(selected_predictors, collapse = " + "))
-  model <- lm(as.formula(formula_text), data = df)
+  review <- review_observations(numeric_df, names(numeric_df), exclude_missing = exclude_missing)
+  numeric_df <- review$data
+  validate(need(nrow(numeric_df) > ncol(numeric_df), "More complete observations than fitted coefficients are required."))
+  validate(need(all(vapply(numeric_df, function(x) length(unique(x)) > 1L, logical(1))), "Remove constant variables before regression."))
+  df <- df[review$rows, , drop = FALSE]
+  corr <- cor(numeric_df, use = "complete.obs")
+  model_formula <- safe_model_formula(response, selected_predictors)
+  formula_text <- paste(deparse(model_formula), collapse = " ")
+  model <- lm(model_formula, data = df, na.action = na.fail)
+  validate(need(model$rank == length(coef(model)), "Predictors are linearly dependent. Remove redundant predictors."))
   coeffs <- as.data.frame(summary(model)$coefficients)
   coeffs$Term <- rownames(coeffs)
+  rownames(coeffs) <- NULL
   coeffs <- coeffs[, c("Term", setdiff(names(coeffs), "Term"))]
 
   list(
     dataset = df,
     correlation = as.data.frame(corr),
     correlation_source = numeric_df,
-    correlation_p = as.data.frame(correlation_p_matrix(numeric_df)),
+    correlation_p = structure(as.data.frame(correlation_p_matrix(numeric_df)), p_value_matrix = TRUE),
     coefficients = coeffs,
     fit = data.frame(
       Metric = c("R-squared", "Adjusted R-squared", "Residual SE", "F-statistic p-value"),
       Value = c(summary(model)$r.squared, summary(model)$adj.r.squared, sigma(model), pf(summary(model)$fstatistic[1], summary(model)$fstatistic[2], summary(model)$fstatistic[3], lower.tail = FALSE)),
       stringsAsFactors = FALSE
     ),
-    diagnostics = data.frame(Observation = seq_len(nrow(df)), Fitted = fitted(model), Residual = resid(model), stringsAsFactors = FALSE),
+    diagnostics = data.frame(Observation = review$rows, Fitted = fitted(model), Residual = resid(model), stringsAsFactors = FALSE),
+    exclusions = review$exclusions,
     formula = formula_text,
-    report_note = sprintf("Regression model: %s", formula_text)
+    report_note = sprintf("Regression model: %s. Observations used: %s; excluded after review: %s.", formula_text, nrow(df), nrow(review$exclusions))
   )
 }
+
+# Preserve existing return fields while surfacing model health in reports.
+run_design_analysis <- capture_analysis_health(run_design_analysis)
+run_pooled_anova <- capture_analysis_health(run_pooled_anova)
+run_pooled_split_plot <- capture_analysis_health(run_pooled_split_plot)
+run_split_plot <- capture_analysis_health(run_split_plot)
+run_correlation_regression <- capture_analysis_health(run_correlation_regression)
+
+run_design_layout <- local({
+  engine <- run_design_layout
+  function(design, seed = 1, ...) {
+    out <- engine(design, seed = seed, ...)
+    book <- out$fieldbook
+    book$PlotID <- sprintf("P%05d",seq_len(nrow(book)))
+    block <- if("Block" %in% names(book)) book$Block else if("Replication" %in% names(book)) book$Replication else rep(1,nrow(book))
+    if(!"Row" %in% names(book)) book$Row <- as.integer(factor(block))
+    if(!"Column" %in% names(book)) book$Column <- as.integer(ave(seq_len(nrow(book)),block,FUN=seq_along))
+    book$Seed <- seed
+    book$Response <- NA_real_
+    out$fieldbook <- book
+    out
+  }
+})

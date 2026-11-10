@@ -1,0 +1,49 @@
+---
+title: "PCA & Diversity Exploration"
+output:
+  html_document:
+    toc: true
+---
+
+Explore multivariate relationships on a defined scale
+
+## Question and data
+Use one row per genotype and at least two varying numeric traits. Traits are centred and divided by their sample SD before PCA and Euclidean Ward.D2 clustering.
+
+## Reporting and assumptions
+Report eigenvalue percentages, loadings and scores. The biplot overlays unit loading vectors on score coordinates; read numerical loadings for exact contributions. The dendrogram describes the chosen standardized trait distance.
+
+Cluster membership is exploratory, not proof of genetic ancestry or population structure. Principal-component signs may reverse between equivalent decompositions without changing the solution.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## pca
+
+Synthetic teaching data.
+
+```{r pca, message=FALSE, warning=TRUE}
+data <- research_example("pca-diversity")
+result <- run_diversity(data,c("Yield","Height","Maturity"),clusters=3)
+```
+
+```{r pca-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r pca-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

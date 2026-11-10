@@ -1,23 +1,26 @@
-register_report_downloads <- function(output, pdf_id, word_id, filename_base, params) {
+register_report_downloads <- function(output, pdf_id, word_id, filename_base, params, template_name = "analysis-report-template.Rmd") {
+  render_download <- function(file, format) {
+    tryCatch(render_parameterized_report(output_file=file,output_format=format,
+      params=params(),template_name=template_name),error=function(e) {
+        detail<-conditionMessage(e)
+        if(!nzchar(detail)) detail<-"Run the analysis with the current data and settings first."
+        showNotification(paste("Report download failed.",detail),type="error",duration=15)
+        stop(e)
+      })
+  }
   output[[pdf_id]] <- downloadHandler(
     filename = function() paste0(filename_base, ".pdf"),
+    contentType = "application/pdf",
     content = function(file) {
-      render_parameterized_report(
-        output_file = file,
-        output_format = "pdf_document",
-        params = params()
-      )
+      render_download(file,"pdf_document")
     }
   )
 
   output[[word_id]] <- downloadHandler(
     filename = function() paste0(filename_base, ".docx"),
+    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     content = function(file) {
-      render_parameterized_report(
-        output_file = file,
-        output_format = "word_document",
-        params = params()
-      )
+      render_download(file,"word_document")
     }
   )
 }
@@ -37,9 +40,10 @@ portal_ui <- function(catalog = app_catalog) {
       column(6, div(class = "station-card", h3("How researchers will use this suite"), p("Choose a module, upload CSV/XLSX data or paste a table, review assumptions, then export CSV tables, HTML reports, and randomized design plans where applicable."), tags$ul(tags$li("Public link access for v1."), tags$li("Shared validation and reporting patterns across modules."), tags$li("Deployment assets included for Docker, nginx, and Shiny Server.")))),
       column(6, div(class = "station-card", h3("About Dr. Saurav Singla"), p("Dr. Saurav Singla, Asst. Prof. (Agri. Stat.); Ph.D. (Ag. Stat.) from BHU, Varanasi and M.Sc.(Ag.) in Stat from TNAU, Coimbatore; Qualified GATE Statistics, GATE DS&AI, ASRB NET, UGC-NET and contributed statistical part in lot of research papers."), p("Modules are linked below.")))
     ),
-    fluidRow(lapply(catalog[-1], function(app) {
-      column(6, div(class = "station-card", h3(app$label), p(switch(app$key, "design-analyzer" = "Generate randomized field layouts and allocation tables for CRD, RBD, factorial CRD/RBD, split-plot, strip-plot, and augmented RCBD experiments.", "crd-rbd" = "Single-factor CRD and RBD analysis with ANOVA, configurable post-hoc tests, and treatment plots.", "factorial-design" = "Two-factor factorial CRD and RBD analysis with EDA, diagnostics, emmeans, and post-hoc comparisons.", "pooled-anova" = "Pool trials across years or seasons after homogeneity checks.", "split-plot" = "Analyze split-plot experiments with correct strata.", "correlation-regression" = "Explore correlation, simple regression, and multiple regression.", "descriptive-statistics" = "Summarize variables, inspect distributions, and run normality diagnostics.", "compare-means" = "Run one-sample, two-sample, Welch and paired t-tests with visual comparison charts.", "met-stability" = "Multi-environment trial stability analysis: AMMI, GGE, WAASB, WAASBY, BLUP-based stability indices, individual and combined ANOVA, and simultaneous selection indices.")), tags$a(class = "btn btn-success", href = app$path, "Open Module")))
-    }))
+    lapply(names(module_groups),function(group) tagList(h2(group),fluidRow(lapply(module_groups[[group]],function(key) {
+      app<-Filter(function(x) identical(x$key,key),catalog)[[1]]
+      column(6,div(class="station-card",h3(app$label),p(module_registry[[key]]$description),tags$a(class="btn btn-success",href=app$path,"Open module")))
+    }))))
   )
 }
 
@@ -80,9 +84,13 @@ design_analyzer_ui <- function(nav_catalog = app_catalog) {
       uiOutput("layout_error_msg")
     ),
     analysis_tabs(
-      tabPanel("Experiment Summary", tableOutput("layout_summary_table")),
-      tabPanel("Allocation Table", tableOutput("layout_fieldbook_table")),
-      tabPanel("Layout Plot", plotOutput("layout_plot", height = "520px"))
+      tabPanel("Layout & Allocation",
+        output_section("Experiment Summary", tableOutput("layout_summary_table")),
+        output_section("Allocation Table", tableOutput("layout_fieldbook_table"))
+      ),
+      tabPanel("Layout Plot",
+        output_section("Field Layout Visualization", plotOutput("layout_plot", height = "520px"))
+      )
     ),
     nav_catalog = nav_catalog
   )
@@ -90,7 +98,7 @@ design_analyzer_ui <- function(nav_catalog = app_catalog) {
 
 design_analyzer_server <- function(input, output, session) {
   err <- reactiveVal(NULL)
-  layout_plan <- eventReactive(input$generate_layout, {
+  layout_plan <- guarded_event_reactive(input$generate_layout, {
     err(NULL)
     tryCatch(
       run_design_layout(
@@ -113,8 +121,8 @@ design_analyzer_server <- function(input, output, session) {
   })
 
   output$layout_error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$layout_summary_table <- renderTable({ req(layout_plan()); layout_plan()$summary }, rownames = FALSE)
-  output$layout_fieldbook_table <- renderTable({ req(layout_plan()); layout_plan()$fieldbook }, rownames = FALSE)
+  output$layout_summary_table <- render_publication_table({ req(layout_plan()); layout_plan()$summary }, rownames = FALSE)
+  output$layout_fieldbook_table <- render_publication_table({ req(layout_plan()); layout_plan()$fieldbook }, rownames = FALSE)
   output$layout_plot <- renderPlot({
     req(layout_plan())
     plan <- layout_plan()
@@ -245,13 +253,20 @@ crd_rbd_ui <- function(nav_catalog = app_catalog) {
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("Means & CI", tableOutput("treatment_summary_table")),
-      tabPanel("ANOVA Table", tableOutput("anova_table")),
-      tabPanel("Key Statistics", tableOutput("stats_table")),
-      tabPanel("Inference", verbatimTextOutput("inference_text")),
-      tabPanel("Post-hoc", tableOutput("lsd_stats"), tags$br(), tableOutput("lsd_groups")),
-      tabPanel("Treatment Plot", plotOutput("treatment_plot", height = "360px")),
-      tabPanel("Long Data View", tableOutput("long_data_table"))
+      tabPanel("ANOVA & Inference",
+        output_section("Analysis of Variance", tableOutput("anova_table")),
+        output_section("Key Fit Statistics", tableOutput("stats_table")),
+        output_section("Statistical Inference", verbatimTextOutput("inference_text"))
+      ),
+      tabPanel("Means & Comparisons",
+        output_section("Treatment Means & 95% CI", tableOutput("treatment_summary_table")),
+        output_section("Post-Hoc Critical Values", tableOutput("lsd_stats")),
+        output_section("Post-Hoc Letter Groupings", tableOutput("lsd_groups")),
+        output_section("Treatment Response Plot", plotOutput("treatment_plot", height = "380px"))
+      ),
+      tabPanel("Data",
+        output_section("Long Data View", tableOutput("long_data_table"))
+      )
     ),
     nav_catalog = nav_catalog
   )
@@ -260,7 +275,7 @@ crd_rbd_ui <- function(nav_catalog = app_catalog) {
 crd_rbd_server <- function(input, output, session) {
   observeEvent(input$design, updateTextAreaInput(session, "data_input", value = default_data[[input$design]]), ignoreNULL = FALSE)
   err <- reactiveVal(NULL)
-  analysis <- eventReactive(input$analyze, {
+  analysis <- guarded_event_reactive(input$analyze, {
     err(NULL)
     tryCatch(run_design_analysis(read_dataset_input(input$upload, input$data_input), input$design, 2, 2, input$alpha, input$comparison_method), error = function(e) {
       err(conditionMessage(e))
@@ -269,13 +284,13 @@ crd_rbd_server <- function(input, output, session) {
   })
 
   output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$long_data_table <- renderTable({ req(analysis()); analysis()$dataset }, rownames = FALSE)
-  output$anova_table <- renderTable({ req(analysis()); analysis()$anova }, rownames = FALSE)
-  output$stats_table <- renderTable({ req(analysis()); analysis()$stats }, rownames = FALSE)
-  output$means_ci_table <- renderTable({ req(analysis()); analysis()$means }, rownames = FALSE)
-  output$lsd_stats <- renderTable({ req(analysis()); analysis()$lsd_stats }, rownames = FALSE)
-  output$lsd_groups <- renderTable({ req(analysis()); analysis()$groups }, rownames = FALSE)
-  output$treatment_summary_table <- renderTable({ req(analysis()); analysis()$treatment_summary }, rownames = FALSE)
+  output$long_data_table <- render_publication_table({ req(analysis()); analysis()$dataset }, rownames = FALSE)
+  output$anova_table <- render_publication_table({ req(analysis()); analysis()$anova }, rownames = FALSE)
+  output$stats_table <- render_publication_table({ req(analysis()); analysis()$stats }, rownames = FALSE)
+  output$means_ci_table <- render_publication_table({ req(analysis()); analysis()$means }, rownames = FALSE)
+  output$lsd_stats <- render_publication_table({ req(analysis()); analysis()$lsd_stats }, rownames = FALSE)
+  output$lsd_groups <- render_publication_table({ req(analysis()); analysis()$groups }, rownames = FALSE)
+  output$treatment_summary_table <- render_publication_table({ req(analysis()); analysis()$treatment_summary }, rownames = FALSE)
   output$inference_text <- renderText({ req(analysis()); analysis()$inference })
   treatment_plot_object <- reactive({
     req(analysis())
@@ -358,11 +373,17 @@ descriptive_statistics_ui <- function(nav_catalog = app_catalog) {
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("Data preview", tableOutput("desc_data_table")),
-      tabPanel("Summary", tableOutput("desc_summary_table")),
-      tabPanel("Group summary", tableOutput("desc_group_table")),
-      tabPanel("Plot", plotOutput("desc_plot", height = "520px")),
-      tabPanel("Normality", verbatimTextOutput("desc_normality_text"))
+      tabPanel("Summary & Normality",
+        output_section("Overall Summary Statistics", tableOutput("desc_summary_table")),
+        output_section("Group-wise Summary Statistics", tableOutput("desc_group_table")),
+        output_section("Normality Assessment", verbatimTextOutput("desc_normality_text"))
+      ),
+      tabPanel("Distribution Plot",
+        output_section("Distribution Visualization", plotOutput("desc_plot", height = "520px"))
+      ),
+      tabPanel("Data",
+        output_section("Data Preview", tableOutput("desc_data_table"))
+      )
     ),
     nav_catalog = nav_catalog
   )
@@ -399,7 +420,7 @@ descriptive_statistics_server <- function(input, output, session) {
     }
   })
 
-  desc_analysis <- eventReactive(input$desc_analyze, {
+  desc_analysis <- guarded_event_reactive(input$desc_analyze, {
     err(NULL)
     tryCatch(
       run_descriptive_analysis(read_dataset_input(input$upload, input$data_input), input$analysis_type, input$desc_vars, input$desc_group),
@@ -410,9 +431,9 @@ descriptive_statistics_server <- function(input, output, session) {
   })
 
   output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$desc_data_table <- renderTable({ req(desc_analysis()); head(desc_analysis()$dataset, 50) }, rownames = FALSE)
-  output$desc_summary_table <- renderTable({ req(desc_analysis()); desc_analysis()$summary }, rownames = FALSE)
-  output$desc_group_table <- renderTable({ req(desc_analysis()); desc_analysis()$by_group }, rownames = FALSE)
+  output$desc_data_table <- render_publication_table({ req(desc_analysis()); head(desc_analysis()$dataset, 50) }, rownames = FALSE)
+  output$desc_summary_table <- render_publication_table({ req(desc_analysis()); desc_analysis()$summary }, rownames = FALSE)
+  output$desc_group_table <- render_publication_table({ req(desc_analysis()); desc_analysis()$by_group }, rownames = FALSE)
   output$desc_plot <- renderPlot({ req(desc_analysis()); desc_analysis()$plot_obj }, height = 520)
   output$desc_normality_text <- renderText({ req(desc_analysis()); paste(desc_analysis()$normality, collapse = "\n") })
 
@@ -491,11 +512,17 @@ compare_means_ui <- function(nav_catalog = app_catalog) {
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("Data preview", tableOutput("tt_data_table")),
-      tabPanel("Descriptive summary", tableOutput("tt_desc_table")),
-      tabPanel("Variance check", tableOutput("tt_variance_table")),
-      tabPanel("Test result", tableOutput("tt_result_table")),
-      tabPanel("Plot", plotOutput("tt_plot", height = "520px"))
+      tabPanel("Test Results & Summary",
+        output_section("Hypothesis Test Result", tableOutput("tt_result_table")),
+        output_section("Descriptive Summary", tableOutput("tt_desc_table")),
+        output_section("Variance Homogeneity Check", tableOutput("tt_variance_table"))
+      ),
+      tabPanel("Plot",
+        output_section("Comparison Plot", plotOutput("tt_plot", height = "520px"))
+      ),
+      tabPanel("Data",
+        output_section("Data Preview", tableOutput("tt_data_table"))
+      )
     ),
     nav_catalog = nav_catalog
   )
@@ -536,7 +563,7 @@ compare_means_server <- function(input, output, session) {
     )
   })
 
-  tt_analysis <- eventReactive(input$tt_analyze, {
+  tt_analysis <- guarded_event_reactive(input$tt_analyze, {
     err(NULL)
     tryCatch(
       run_ttest_analysis(read_dataset_input(input$upload, input$data_input), input$tt_type, input$tt_value, input$tt_group, input$tt_pair_left, input$tt_pair_right, input$tt_mu, input$tt_var_equal),
@@ -547,10 +574,10 @@ compare_means_server <- function(input, output, session) {
   })
 
   output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$tt_data_table <- renderTable({ req(tt_analysis()); head(tt_analysis()$dataset, 50) }, rownames = FALSE)
-  output$tt_desc_table <- renderTable({ req(tt_analysis()); tt_analysis()$summary }, rownames = FALSE)
-  output$tt_variance_table <- renderTable({ req(tt_analysis()); tt_analysis()$variance }, rownames = FALSE)
-  output$tt_result_table <- renderTable({ req(tt_analysis()); tt_analysis()$test_result }, rownames = FALSE)
+  output$tt_data_table <- render_publication_table({ req(tt_analysis()); head(tt_analysis()$dataset, 50) }, rownames = FALSE)
+  output$tt_desc_table <- render_publication_table({ req(tt_analysis()); tt_analysis()$summary }, rownames = FALSE)
+  output$tt_variance_table <- render_publication_table({ req(tt_analysis()); tt_analysis()$variance }, rownames = FALSE)
+  output$tt_result_table <- render_publication_table({ req(tt_analysis()); tt_analysis()$test_result }, rownames = FALSE)
   output$tt_plot <- renderPlot({ req(tt_analysis()); tt_analysis()$plot_obj }, height = 520)
 
   output$download_tt_csv <- downloadHandler(
@@ -630,16 +657,49 @@ factorial_design_ui <- function(nav_catalog = app_catalog) {
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("Long Data View", tableOutput("long_data_table")),
-      tabPanel("ANOVA Table", tableOutput("anova_table")),
-      tabPanel("Key Statistics", tableOutput("stats_table")),
-      tabPanel("Means & CI", tableOutput("means_ci_table")),
-      tabPanel("LSD & Letter Groups", tableOutput("lsd_stats"), tags$br(), tableOutput("lsd_groups")),
-      tabPanel("EDA", verbatimTextOutput("factorial_data_summary"), plotOutput("factorial_boxplot", height = "320px"), plotOutput("factorial_observed_interaction", height = "320px")),
-      tabPanel("Models", tableOutput("factorial_full_anova"), tags$br(), tableOutput("factorial_additive_anova"), tags$br(), tableOutput("factorial_assumptions")),
-      tabPanel("Diagnostics", verbatimTextOutput("factorial_final_summary"), plotOutput("factorial_residual_plot", height = "320px"), plotOutput("factorial_residual_qq_plot", height = "320px"), tableOutput("factorial_shapiro"), tags$br(), tableOutput("factorial_levene"), tags$br(), tableOutput("factorial_diagnostics")),
-      tabPanel("Emmeans", tableOutput("factorial_emm_interaction"), tags$br(), tableOutput("factorial_emm_a"), tags$br(), tableOutput("factorial_emm_b"), plotOutput("factorial_emm_interaction_plot", height = "320px"), plotOutput("factorial_emm_a_plot", height = "320px"), plotOutput("factorial_emm_b_plot", height = "320px")),
-      tabPanel("Post-hoc", tableOutput("factorial_tukey_interaction"), tags$br(), tableOutput("factorial_tukey_a"), tags$br(), tableOutput("factorial_tukey_b"), tags$br(), tableOutput("factorial_cld_interaction"), tags$br(), tableOutput("factorial_cld_a"), tags$br(), tableOutput("factorial_cld_b"))
+      tabPanel("ANOVA & Models",
+        output_section("Design ANOVA Table", tableOutput("anova_table")),
+        output_section("Key Fit Statistics", tableOutput("stats_table")),
+        output_section("Full Interaction Model ANOVA", tableOutput("factorial_full_anova")),
+        output_section("Additive Model ANOVA", tableOutput("factorial_additive_anova")),
+        output_section("Model Selection & Assumptions", tableOutput("factorial_assumptions"))
+      ),
+      tabPanel("Means & Post-Hoc",
+        output_section("Treatment Means & CI", tableOutput("means_ci_table")),
+        output_section("LSD & Letter Groupings", tableOutput("lsd_stats"), tags$br(), tableOutput("lsd_groups")),
+        output_section("Estimated Marginal Means (Interaction, Factor A, Factor B)",
+          tableOutput("factorial_emm_interaction"), tags$br(),
+          tableOutput("factorial_emm_a"), tags$br(),
+          tableOutput("factorial_emm_b"),
+          plotOutput("factorial_emm_interaction_plot", height = "320px"),
+          plotOutput("factorial_emm_a_plot", height = "320px"),
+          plotOutput("factorial_emm_b_plot", height = "320px")
+        ),
+        output_section("Tukey Pairwise Comparisons & Compact Letter Displays",
+          tableOutput("factorial_tukey_interaction"), tags$br(),
+          tableOutput("factorial_tukey_a"), tags$br(),
+          tableOutput("factorial_tukey_b"), tags$br(),
+          tableOutput("factorial_cld_interaction"), tags$br(),
+          tableOutput("factorial_cld_a"), tags$br(),
+          tableOutput("factorial_cld_b")
+        )
+      ),
+      tabPanel("Diagnostics & Data",
+        output_section("Exploratory Data Summary & Plots",
+          verbatimTextOutput("factorial_data_summary"),
+          plotOutput("factorial_boxplot", height = "320px"),
+          plotOutput("factorial_observed_interaction", height = "320px")
+        ),
+        output_section("Residual Diagnostics & Assumption Tests",
+          verbatimTextOutput("factorial_final_summary"),
+          plotOutput("factorial_residual_plot", height = "320px"),
+          plotOutput("factorial_residual_qq_plot", height = "320px"),
+          tableOutput("factorial_shapiro"), tags$br(),
+          tableOutput("factorial_levene"), tags$br(),
+          tableOutput("factorial_diagnostics")
+        ),
+        output_section("Long Data View", tableOutput("long_data_table"))
+      )
     ),
     nav_catalog = nav_catalog
   )
@@ -648,7 +708,7 @@ factorial_design_ui <- function(nav_catalog = app_catalog) {
 factorial_design_server <- function(input, output, session) {
   observeEvent(input$design, updateTextAreaInput(session, "data_input", value = default_data[[input$design]]), ignoreNULL = FALSE)
   err <- reactiveVal(NULL)
-  analysis <- eventReactive(input$analyze, {
+  analysis <- guarded_event_reactive(input$analyze, {
     err(NULL)
     tryCatch(run_design_analysis(read_dataset_input(input$upload, input$data_input), input$design, input$levels_a, input$levels_b, input$alpha), error = function(e) {
       err(conditionMessage(e))
@@ -657,29 +717,29 @@ factorial_design_server <- function(input, output, session) {
   })
 
   output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$long_data_table <- renderTable({ req(analysis()); analysis()$dataset }, rownames = FALSE)
-  output$anova_table <- renderTable({ req(analysis()); analysis()$anova }, rownames = FALSE)
-  output$stats_table <- renderTable({ req(analysis()); analysis()$stats }, rownames = FALSE)
-  output$means_ci_table <- renderTable({ req(analysis()); analysis()$means }, rownames = FALSE)
-  output$lsd_stats <- renderTable({ req(analysis()); analysis()$lsd_stats }, rownames = FALSE)
-  output$lsd_groups <- renderTable({ req(analysis()); analysis()$groups }, rownames = FALSE)
+  output$long_data_table <- render_publication_table({ req(analysis()); analysis()$dataset }, rownames = FALSE)
+  output$anova_table <- render_publication_table({ req(analysis()); analysis()$anova }, rownames = FALSE)
+  output$stats_table <- render_publication_table({ req(analysis()); analysis()$stats }, rownames = FALSE)
+  output$means_ci_table <- render_publication_table({ req(analysis()); analysis()$means }, rownames = FALSE)
+  output$lsd_stats <- render_publication_table({ req(analysis()); analysis()$lsd_stats }, rownames = FALSE)
+  output$lsd_groups <- render_publication_table({ req(analysis()); analysis()$groups }, rownames = FALSE)
   output$factorial_data_summary <- renderText({ req(analysis()); paste(analysis()$factorial$data_summary, collapse = "\n") })
-  output$factorial_full_anova <- renderTable({ req(analysis()); analysis()$factorial$full_anova }, rownames = FALSE)
-  output$factorial_additive_anova <- renderTable({ req(analysis()); analysis()$factorial$additive_anova }, rownames = FALSE)
-  output$factorial_assumptions <- renderTable({ req(analysis()); analysis()$factorial$assumptions }, rownames = FALSE)
+  output$factorial_full_anova <- render_publication_table({ req(analysis()); analysis()$factorial$full_anova }, rownames = FALSE)
+  output$factorial_additive_anova <- render_publication_table({ req(analysis()); analysis()$factorial$additive_anova }, rownames = FALSE)
+  output$factorial_assumptions <- render_publication_table({ req(analysis()); analysis()$factorial$assumptions }, rownames = FALSE)
   output$factorial_final_summary <- renderText({ req(analysis()); paste(analysis()$factorial$final_summary, collapse = "\n") })
-  output$factorial_shapiro <- renderTable({ req(analysis()); analysis()$factorial$shapiro }, rownames = FALSE)
-  output$factorial_levene <- renderTable({ req(analysis()); analysis()$factorial$levene }, rownames = FALSE)
-  output$factorial_diagnostics <- renderTable({ req(analysis()); analysis()$factorial$diagnostics }, rownames = FALSE)
-  output$factorial_emm_interaction <- renderTable({ req(analysis()); analysis()$factorial$emmeans_interaction }, rownames = FALSE)
-  output$factorial_emm_a <- renderTable({ req(analysis()); analysis()$factorial$emmeans_a }, rownames = FALSE)
-  output$factorial_emm_b <- renderTable({ req(analysis()); analysis()$factorial$emmeans_b }, rownames = FALSE)
-  output$factorial_tukey_interaction <- renderTable({ req(analysis()); analysis()$factorial$tukey_interaction }, rownames = FALSE)
-  output$factorial_tukey_a <- renderTable({ req(analysis()); analysis()$factorial$tukey_a }, rownames = FALSE)
-  output$factorial_tukey_b <- renderTable({ req(analysis()); analysis()$factorial$tukey_b }, rownames = FALSE)
-  output$factorial_cld_interaction <- renderTable({ req(analysis()); analysis()$factorial$cld_interaction }, rownames = FALSE)
-  output$factorial_cld_a <- renderTable({ req(analysis()); analysis()$factorial$cld_a }, rownames = FALSE)
-  output$factorial_cld_b <- renderTable({ req(analysis()); analysis()$factorial$cld_b }, rownames = FALSE)
+  output$factorial_shapiro <- render_publication_table({ req(analysis()); analysis()$factorial$shapiro }, rownames = FALSE)
+  output$factorial_levene <- render_publication_table({ req(analysis()); analysis()$factorial$levene }, rownames = FALSE)
+  output$factorial_diagnostics <- render_publication_table({ req(analysis()); analysis()$factorial$diagnostics }, rownames = FALSE)
+  output$factorial_emm_interaction <- render_publication_table({ req(analysis()); analysis()$factorial$emmeans_interaction }, rownames = FALSE)
+  output$factorial_emm_a <- render_publication_table({ req(analysis()); analysis()$factorial$emmeans_a }, rownames = FALSE)
+  output$factorial_emm_b <- render_publication_table({ req(analysis()); analysis()$factorial$emmeans_b }, rownames = FALSE)
+  output$factorial_tukey_interaction <- render_publication_table({ req(analysis()); analysis()$factorial$tukey_interaction }, rownames = FALSE)
+  output$factorial_tukey_a <- render_publication_table({ req(analysis()); analysis()$factorial$tukey_a }, rownames = FALSE)
+  output$factorial_tukey_b <- render_publication_table({ req(analysis()); analysis()$factorial$tukey_b }, rownames = FALSE)
+  output$factorial_cld_interaction <- render_publication_table({ req(analysis()); analysis()$factorial$cld_interaction }, rownames = FALSE)
+  output$factorial_cld_a <- render_publication_table({ req(analysis()); analysis()$factorial$cld_a }, rownames = FALSE)
+  output$factorial_cld_b <- render_publication_table({ req(analysis()); analysis()$factorial$cld_b }, rownames = FALSE)
   output$factorial_boxplot <- renderPlot({ req(analysis()); print(analysis()$factorial$boxplot_obj) })
   output$factorial_observed_interaction <- renderPlot({ req(analysis()); print(analysis()$factorial$observed_interaction_plot) })
   output$factorial_emm_interaction_plot <- renderPlot({ req(analysis()); print(analysis()$factorial$emm_interaction_plot) })
@@ -800,7 +860,20 @@ pooled_anova_ui <- function(nav_catalog = app_catalog) {
       downloadButton("download_report", "Download HTML report"),
       uiOutput("error_msg")
     ),
-    analysis_tabs(tabPanel("ANOVA Table", tableOutput("anova_table")), tabPanel("Homogeneity Checks", tableOutput("homogeneity_table"), tags$br(), tableOutput("error_ms_table")), tabPanel("Means", tableOutput("treatment_means_table"), tags$br(), tableOutput("season_treatment_means_table")), tabPanel("Long Data View", tableOutput("long_data_table")))
+    analysis_tabs(
+      tabPanel("ANOVA & Homogeneity",
+        output_section("Pooled ANOVA Table", tableOutput("anova_table")),
+        output_section("Bartlett Homogeneity Check", tableOutput("homogeneity_table")),
+        output_section("Season-wise Error Mean Squares", tableOutput("error_ms_table"))
+      ),
+      tabPanel("Treatment Means",
+        output_section("Pooled Treatment Means", tableOutput("treatment_means_table")),
+        output_section("Season x Treatment Means", tableOutput("season_treatment_means_table"))
+      ),
+      tabPanel("Data",
+        output_section("Long Data View", tableOutput("long_data_table"))
+      )
+    )
     ,
     nav_catalog = nav_catalog
   )
@@ -808,7 +881,7 @@ pooled_anova_ui <- function(nav_catalog = app_catalog) {
 
 pooled_anova_server <- function(input, output, session) {
   err <- reactiveVal(NULL)
-  analysis <- eventReactive(input$analyze, {
+  analysis <- guarded_event_reactive(input$analyze, {
     err(NULL)
     tryCatch(run_pooled_anova(read_dataset_input(input$upload, input$data_input), input$alpha), error = function(e) {
       err(conditionMessage(e))
@@ -817,12 +890,12 @@ pooled_anova_server <- function(input, output, session) {
   })
 
   output$error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
-  output$anova_table <- renderTable({ req(analysis()); analysis()$anova }, rownames = FALSE)
-  output$homogeneity_table <- renderTable({ req(analysis()); analysis()$homogeneity }, rownames = FALSE)
-  output$error_ms_table <- renderTable({ req(analysis()); analysis()$error_summary }, rownames = FALSE)
-  output$treatment_means_table <- renderTable({ req(analysis()); analysis()$treatment_means }, rownames = FALSE)
-  output$season_treatment_means_table <- renderTable({ req(analysis()); analysis()$season_treatment_means }, rownames = FALSE)
-  output$long_data_table <- renderTable({ req(analysis()); analysis()$dataset }, rownames = FALSE)
+  output$anova_table <- render_publication_table({ req(analysis()); analysis()$anova }, rownames = FALSE)
+  output$homogeneity_table <- render_publication_table({ req(analysis()); analysis()$homogeneity }, rownames = FALSE)
+  output$error_ms_table <- render_publication_table({ req(analysis()); analysis()$error_summary }, rownames = FALSE)
+  output$treatment_means_table <- render_publication_table({ req(analysis()); analysis()$treatment_means }, rownames = FALSE)
+  output$season_treatment_means_table <- render_publication_table({ req(analysis()); analysis()$season_treatment_means }, rownames = FALSE)
+  output$long_data_table <- render_publication_table({ req(analysis()); analysis()$dataset }, rownames = FALSE)
 
   output$download_csv <- downloadHandler(
     filename = function() sprintf("pooled-anova-%s.csv", gsub("[^a-z]+", "-", tolower(input$csv_table))),
@@ -882,6 +955,242 @@ pooled_anova_server <- function(input, output, session) {
   )
 }
 
+pooled_split_plot_ui <- function(nav_catalog = app_catalog) {
+  station_page(
+    "Pooled Split Plot",
+    "Pooled Split-RCBD analysis across years with Satterthwaite inference, Fisher LSD critical differences, and optional pairwise p-value plots.",
+    "pooled-split-plot",
+    tagList(
+      numericInput("pooled_split_alpha", "Significance level", value = 0.05, min = 0.01, max = 0.2, step = 0.01),
+      checkboxInput("pooled_split_pwpp", "Include interaction pairwise p-value plot (PWPP)", value = FALSE),
+      fileInput("pooled_split_upload", "Upload CSV / TSV / XLSX", accept = c(".csv", ".tsv", ".txt", ".xls", ".xlsx")),
+      textAreaInput("pooled_split_data_input", "Or paste a table", value = pooled_split_plot_example, rows = 12),
+      uiOutput("pooled_split_year_var_ui"),
+      uiOutput("pooled_split_rep_var_ui"),
+      uiOutput("pooled_split_mainplot_var_ui"),
+      uiOutput("pooled_split_subplot_var_ui"),
+      uiOutput("pooled_split_response_var_ui"),
+      build_help_box("Expected data", c("Choose Year, Rep, MainPlot, SubPlot, and a numeric response column.", "Use one observation per Year x Rep x MainPlot x SubPlot cell.", "This version requires the same treatment levels and number of replications in every year.")),
+      actionButton("pooled_split_analyze", "Run pooled split-plot analysis", class = "btn-primary"),
+      tags$hr(),
+      selectInput("pooled_split_csv_table", "CSV table to download", choices = c("ANOVA", "CD summary", "Main plot means", "Subplot means", "Interaction means", "Main plot LSD", "Subplot LSD", "Interaction LSD", "Subplot within main plot LSD", "Main plot within subplot LSD", "Fixed effects", "Random-effect variance", "Diagnostics")),
+      downloadButton("download_pooled_split_csv", "Download CSV"),
+      report_download_buttons("download_pooled_split_pdf_report", "download_pooled_split_word_report"),
+      downloadButton("download_pooled_split_report", "Download HTML report"),
+      uiOutput("pooled_split_error_msg")
+    ),
+    analysis_tabs(
+      tabPanel("ANOVA & Model",
+        output_section("Pooled Split-RCBD ANOVA", tableOutput("pooled_split_anova_table")),
+        output_section("Model Information", tableOutput("pooled_split_model_info_table")),
+        output_section("Fixed Effects", tableOutput("pooled_split_fixed_effects_table")),
+        output_section("Random-Effect Variance Components", tableOutput("pooled_split_random_effects_table"))
+      ),
+      tabPanel("Means & Fisher LSD",
+        output_section("Critical Difference (CD) Summary", tableOutput("pooled_split_cd_summary_table")),
+        output_section("Main-Plot, Subplot & Interaction Means",
+          tableOutput("pooled_split_main_means_table"), tags$br(),
+          tableOutput("pooled_split_sub_means_table"), tags$br(),
+          tableOutput("pooled_split_interaction_means_table"),
+          plotOutput("pooled_split_main_plot", height = "300px"),
+          plotOutput("pooled_split_sub_plot", height = "300px"),
+          plotOutput("pooled_split_interaction_plot", height = "320px")
+        ),
+        output_section("Fisher LSD Pairwise Comparisons",
+          tags$h4("Main plot comparisons"), tableOutput("pooled_split_lsd_main_table"), tags$br(),
+          tags$h4("Subplot comparisons"), tableOutput("pooled_split_lsd_sub_table"), tags$br(),
+          tags$h4("Interaction-cell comparisons"), tableOutput("pooled_split_lsd_interaction_table"), tags$br(),
+          tags$h4("Subplot comparisons within main plot"), tableOutput("pooled_split_lsd_sub_within_main_table"), tags$br(),
+          tags$h4("Main-plot comparisons within subplot"), tableOutput("pooled_split_lsd_main_within_sub_table"),
+          conditionalPanel("input.pooled_split_pwpp", plotOutput("pooled_split_pwpp_plot", height = "600px"))
+        )
+      ),
+      tabPanel("Diagnostics & Data",
+        output_section("Mixed-Model Summary & Residual Diagnostics",
+          verbatimTextOutput("pooled_split_model_summary"),
+          plotOutput("pooled_split_residual_plot", height = "320px"),
+          plotOutput("pooled_split_residual_qq_plot", height = "320px"),
+          tableOutput("pooled_split_diagnostics_table")
+        ),
+        output_section("Long Data View", DT::dataTableOutput("pooled_split_long_data_table"))
+      )
+    ),
+    nav_catalog = nav_catalog
+  )
+}
+
+pooled_split_plot_server <- function(input, output, session) {
+  err <- reactiveVal(NULL)
+  dataset <- reactive({
+    tryCatch(
+      read_dataset_input(input$pooled_split_upload, input$pooled_split_data_input),
+      error = function(e) {
+        err(conditionMessage(e))
+        NULL
+      }
+    )
+  })
+  column_selector <- function(output_id, input_id, label, preferred = character(), numeric_only = FALSE) {
+    output[[output_id]] <- renderUI({
+      df <- dataset()
+      validate(need(!is.null(df), "Upload or paste data first."))
+      choices <- if (numeric_only) names(df)[vapply(df, is.numeric, logical(1))] else names(df)
+      validate(need(length(choices) > 0, if (numeric_only) "No numeric response column found." else "No columns found."))
+      preferred_matches <- preferred[preferred %in% choices]
+      selected <- if (length(preferred_matches) > 0) preferred_matches[[1]] else choices[[1]]
+      selectInput(input_id, label, choices = choices, selected = selected)
+    })
+  }
+  column_selector("pooled_split_year_var_ui", "pooled_split_year_var", "Year/environment variable", c("Year", "Season", "Environment"))
+  column_selector("pooled_split_rep_var_ui", "pooled_split_rep_var", "Replication variable", c("Rep", "Replication", "Block"))
+  column_selector("pooled_split_mainplot_var_ui", "pooled_split_mainplot_var", "Main plot variable", c("MainPlot", "Main_Plot", "MO", "A"))
+  column_selector("pooled_split_subplot_var_ui", "pooled_split_subplot_var", "Subplot variable", c("SubPlot", "Sub_Plot", "P", "B"))
+  column_selector("pooled_split_response_var_ui", "pooled_split_response_var", "Response variable", c("Value", "Yield", "SeedYield_vine", "Y"), numeric_only = TRUE)
+
+  analysis <- guarded_event_reactive(input$pooled_split_analyze, {
+    err(NULL)
+    req(dataset())
+    tryCatch(
+      run_pooled_split_plot(
+        dataset(),
+        year_var = input$pooled_split_year_var,
+        rep_var = input$pooled_split_rep_var,
+        mainplot_var = input$pooled_split_mainplot_var,
+        subplot_var = input$pooled_split_subplot_var,
+        response_var = input$pooled_split_response_var,
+        alpha = input$pooled_split_alpha,
+        include_pwpp = isTRUE(input$pooled_split_pwpp)
+      ),
+      error = function(e) {
+        err(conditionMessage(e))
+        NULL
+      }
+    )
+  })
+
+  output$pooled_split_error_msg <- renderUI({ if (!is.null(err())) div(class = "alert alert-danger", tags$b("Error: "), err()) })
+  output$pooled_split_anova_table <- render_publication_table({ req(analysis()); analysis()$anova }, rownames = FALSE)
+  output$pooled_split_model_info_table <- render_publication_table({ req(analysis()); analysis()$model_info }, rownames = FALSE)
+  output$pooled_split_fixed_effects_table <- render_publication_table({ req(analysis()); analysis()$fixed_effects }, rownames = FALSE)
+  output$pooled_split_random_effects_table <- render_publication_table({ req(analysis()); analysis()$random_effect_variance }, rownames = FALSE)
+  output$pooled_split_main_means_table <- render_publication_table({ req(analysis()); analysis()$main_means }, rownames = FALSE)
+  output$pooled_split_sub_means_table <- render_publication_table({ req(analysis()); analysis()$sub_means }, rownames = FALSE)
+  output$pooled_split_interaction_means_table <- render_publication_table({ req(analysis()); analysis()$interaction_means }, rownames = FALSE)
+  output$pooled_split_cd_summary_table <- render_publication_table({ req(analysis()); analysis()$cd_summary }, rownames = FALSE)
+  output$pooled_split_lsd_main_table <- render_publication_table({ req(analysis()); analysis()$lsd_main }, rownames = FALSE)
+  output$pooled_split_lsd_sub_table <- render_publication_table({ req(analysis()); analysis()$lsd_sub }, rownames = FALSE)
+  output$pooled_split_lsd_interaction_table <- render_publication_table({ req(analysis()); analysis()$lsd_interaction }, rownames = FALSE)
+  output$pooled_split_lsd_sub_within_main_table <- render_publication_table({ req(analysis()); analysis()$lsd_sub_within_main }, rownames = FALSE)
+  output$pooled_split_lsd_main_within_sub_table <- render_publication_table({ req(analysis()); analysis()$lsd_main_within_sub }, rownames = FALSE)
+  output$pooled_split_diagnostics_table <- render_publication_table({ req(analysis()); analysis()$diagnostics }, rownames = FALSE)
+  output$pooled_split_model_summary <- renderPrint({ req(analysis()); cat(paste(analysis()$model_summary, collapse = "\n")) })
+  output$pooled_split_long_data_table <- DT::renderDataTable({ req(analysis()); DT::datatable(publication_table(analysis()$dataset), options = list(pageLength = 15, scrollX = TRUE), rownames = FALSE) })
+  output$pooled_split_main_plot <- renderPlot({ req(analysis()); analysis()$main_plot })
+  output$pooled_split_sub_plot <- renderPlot({ req(analysis()); analysis()$sub_plot })
+  output$pooled_split_interaction_plot <- renderPlot({ req(analysis()); analysis()$interaction_plot })
+  output$pooled_split_residual_plot <- renderPlot({ req(analysis()); analysis()$residual_plot })
+  output$pooled_split_residual_qq_plot <- renderPlot({ req(analysis()); analysis()$residual_qq_plot })
+  output$pooled_split_pwpp_plot <- renderPlot({ req(analysis()); req(!is.null(analysis()$pwpp_plot)); analysis()$pwpp_plot })
+
+  table_map <- reactive({
+    req(analysis())
+    list(
+      "ANOVA" = analysis()$anova,
+      "CD summary" = analysis()$cd_summary,
+      "Main plot means" = analysis()$main_means,
+      "Subplot means" = analysis()$sub_means,
+      "Interaction means" = analysis()$interaction_means,
+      "Main plot LSD" = analysis()$lsd_main,
+      "Subplot LSD" = analysis()$lsd_sub,
+      "Interaction LSD" = analysis()$lsd_interaction,
+      "Subplot within main plot LSD" = analysis()$lsd_sub_within_main,
+      "Main plot within subplot LSD" = analysis()$lsd_main_within_sub,
+      "Fixed effects" = analysis()$fixed_effects,
+      "Random-effect variance" = analysis()$random_effect_variance,
+      "Diagnostics" = analysis()$diagnostics
+    )
+  })
+  output$download_pooled_split_csv <- downloadHandler(
+    filename = function() sprintf("pooled-split-plot-%s.csv", gsub("[^a-z]+", "-", tolower(input$pooled_split_csv_table))),
+    content = function(file) write.csv(table_map()[[input$pooled_split_csv_table]], file, row.names = FALSE)
+  )
+
+  report_params <- reactive({
+    result <- analysis()
+    req(result)
+    extra_plots <- list(
+      "Pooled Main-Plot Means" = result$main_plot,
+      "Pooled Subplot Means" = result$sub_plot,
+      "Pooled Interaction Means" = result$interaction_plot,
+      "Residuals vs Fitted" = result$residual_plot,
+      "Residual Q-Q Plot" = result$residual_qq_plot
+    )
+    if (!is.null(result$pwpp_plot)) extra_plots[["Interaction Pairwise P-Value Plot (PWPP)"]] <- result$pwpp_plot
+    list(
+      report_title = "Pooled Split-RCBD Analysis Report",
+      design_name = "Pooled Split-RCBD",
+      alpha = input$pooled_split_alpha,
+      comparison_method = "Fisher LSD, unadjusted pairwise contrasts",
+      summary_stats = result$cd_summary,
+      anova_table = result$anova,
+      key_statistics = result$model_info,
+      mean_table = result$interaction_means,
+      posthoc_summary = result$lsd_main,
+      posthoc_table = result$lsd_interaction,
+      dataset_preview = head(result$dataset, 20),
+      inference_text = "Critical differences are comparison-specific: CD = qt(1 - alpha / 2, df) * SE, using Satterthwaite degrees of freedom.",
+      report_note = result$report_note,
+      plot_errorbar = result$interaction_plot,
+      extra_tables = c(
+        list(
+          "Pooled Split-RCBD ANOVA" = result$anova,
+          "Model Information" = result$model_info,
+          "Fixed Effects" = result$fixed_effects,
+          "Random-Effect Variance" = result$random_effect_variance,
+          "Critical Difference Summary" = result$cd_summary,
+          "Main-Plot Means" = result$main_means,
+          "Subplot Means" = result$sub_means,
+          "Interaction Means" = result$interaction_means,
+          "Fisher LSD - Main Plot" = result$lsd_main,
+          "Fisher LSD - Subplot" = result$lsd_sub,
+          "Fisher LSD - Interaction Cells" = result$lsd_interaction,
+          "Fisher LSD - Subplot Within Main Plot" = result$lsd_sub_within_main,
+          "Fisher LSD - Main Plot Within Subplot" = result$lsd_main_within_sub,
+          "Exclusions" = result$exclusions, "Diagnostics" = result$diagnostics
+        )
+      ),
+      extra_text_sections = list("Mixed-Model Summary" = result$model_summary),
+      extra_plots = extra_plots,
+      generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+    )
+  })
+  register_report_downloads(output, "download_pooled_split_pdf_report", "download_pooled_split_word_report", "pooled-split-plot-report", report_params)
+  output$download_pooled_split_report <- downloadHandler(
+    filename = function() "pooled-split-plot-report.html",
+    content = function(file) {
+      result <- analysis()
+      req(result)
+      sections <- list(
+        list(title = "Dataset Summary", subtitle = result$report_note, table = head(result$dataset, 20)),
+        list(title = "Model Information", table = result$model_info),
+        list(title = "Pooled Split-RCBD ANOVA", table = result$anova),
+        list(title = "Critical Difference Summary", table = result$cd_summary),
+        list(title = "Main-Plot Means", table = result$main_means, plot = result$main_plot),
+        list(title = "Subplot Means", table = result$sub_means, plot = result$sub_plot),
+        list(title = "Interaction Means", table = result$interaction_means, plot = result$interaction_plot),
+        list(title = "Fisher LSD - Main Plot", table = result$lsd_main),
+        list(title = "Fisher LSD - Subplot", table = result$lsd_sub),
+        list(title = "Fisher LSD - Interaction Cells", table = result$lsd_interaction),
+        list(title = "Fisher LSD - Subplot Within Main Plot", table = result$lsd_sub_within_main),
+        list(title = "Fisher LSD - Main Plot Within Subplot", table = result$lsd_main_within_sub),
+        list(title = "Diagnostics", table = result$diagnostics, plot = result$residual_plot)
+      )
+      if (!is.null(result$pwpp_plot)) sections[[length(sections) + 1]] <- list(title = "Interaction Pairwise P-Value Plot (PWPP)", plot = result$pwpp_plot)
+      save_html_report("Pooled Split-RCBD Analysis Report", sections, file)
+    }
+  )
+}
+
 split_plot_ui <- function(nav_catalog = app_catalog) {
   station_page(
     "Split Plot",
@@ -906,32 +1215,53 @@ split_plot_ui <- function(nav_catalog = app_catalog) {
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("EDA", verbatimTextOutput("data_summary_text"), plotOutput("boxplot_plot", height = "320px"), plotOutput("interaction_plot_chart", height = "320px")),
-      tabPanel("Model ANOVA", tableOutput("full_anova_table"), tags$br(), tableOutput("additive_anova_table"), tags$br(), tableOutput("assumptions_table")),
-      tabPanel("Split Plot Results",
-        tags$h4("Clean split-plot ANOVA"),
-        tableOutput("split_anova_table"),
-        tags$br(),
-        tags$h4("Main plot means"),
-        tableOutput("split_main_means_table"),
-        tags$br(),
-        tags$h4("Subplot means"),
-        tableOutput("split_sub_means_table"),
-        tags$br(),
-        tags$h4("Interaction means"),
-        tableOutput("split_interaction_means_table"),
-        tags$br(),
-        tags$h4("LSD and CV summary"),
-        tableOutput("split_lsd_cv_table"),
-        tags$br(),
-        plotOutput("lsd_main_plot", height = "280px"),
-        plotOutput("lsd_sub_plot", height = "280px"),
-        plotOutput("split_interaction_mean_plot", height = "320px")
+      tabPanel("ANOVA & Model",
+        output_section("Split-Plot ANOVA Strata", tableOutput("split_anova_table")),
+        output_section("LSD & CV Summary", tableOutput("split_lsd_cv_table")),
+        output_section("Mixed-Model Selection & Assumptions",
+          tableOutput("full_anova_table"), tags$br(),
+          tableOutput("additive_anova_table"), tags$br(),
+          tableOutput("assumptions_table")
+        )
       ),
-      tabPanel("Diagnostics", verbatimTextOutput("final_summary_text"), plotOutput("diagnostic_scatter_plot", height = "320px"), plotOutput("residual_qq_plot", height = "320px"), plotOutput("random_effects_qq_plot", height = "320px"), tableOutput("diagnostics_table")),
-      tabPanel("Estimated Means", tableOutput("emmeans_main_table"), tags$br(), tableOutput("emmeans_sub_table"), tags$br(), tableOutput("emmeans_interaction_table"), plotOutput("lsmean_main_plot_chart", height = "320px"), plotOutput("lsmean_sub_plot_chart", height = "320px")),
-      tabPanel("Post-hoc", tableOutput("tukey_main_table"), tags$br(), tableOutput("tukey_sub_table"), tags$br(), tableOutput("cld_main_table"), tags$br(), tableOutput("cld_sub_table")),
-      tabPanel("Long Data View", DT::dataTableOutput("long_data_table"))
+      tabPanel("Means & Comparisons",
+        output_section("Observed Main-Plot, Subplot & Interaction Means",
+          tags$h4("Main plot means"), tableOutput("split_main_means_table"), tags$br(),
+          tags$h4("Subplot means"), tableOutput("split_sub_means_table"), tags$br(),
+          tags$h4("Interaction means"), tableOutput("split_interaction_means_table"),
+          plotOutput("lsd_main_plot", height = "280px"),
+          plotOutput("lsd_sub_plot", height = "280px"),
+          plotOutput("split_interaction_mean_plot", height = "320px")
+        ),
+        output_section("Estimated Marginal Means (EMMeans)",
+          tableOutput("emmeans_main_table"), tags$br(),
+          tableOutput("emmeans_sub_table"), tags$br(),
+          tableOutput("emmeans_interaction_table"),
+          plotOutput("lsmean_main_plot_chart", height = "320px"),
+          plotOutput("lsmean_sub_plot_chart", height = "320px")
+        ),
+        output_section("Tukey Comparisons & Letter Groupings",
+          tableOutput("tukey_main_table"), tags$br(),
+          tableOutput("tukey_sub_table"), tags$br(),
+          tableOutput("cld_main_table"), tags$br(),
+          tableOutput("cld_sub_table")
+        )
+      ),
+      tabPanel("Diagnostics & Data",
+        output_section("Exploratory Data Summary & Plots",
+          verbatimTextOutput("data_summary_text"),
+          plotOutput("boxplot_plot", height = "320px"),
+          plotOutput("interaction_plot_chart", height = "320px")
+        ),
+        output_section("Model Summary & Residual Diagnostics",
+          verbatimTextOutput("final_summary_text"),
+          plotOutput("diagnostic_scatter_plot", height = "320px"),
+          plotOutput("residual_qq_plot", height = "320px"),
+          plotOutput("random_effects_qq_plot", height = "320px"),
+          tableOutput("diagnostics_table")
+        ),
+        output_section("Long Data View", DT::dataTableOutput("long_data_table"))
+      )
     )
     ,
     nav_catalog = nav_catalog
@@ -1070,7 +1400,7 @@ split_plot_server <- function(input, output, session) {
   # ANALYSIS
   ##########################################################
 
-  analysis <- eventReactive(
+  analysis <- guarded_event_reactive(
     input$analyze,
     {
 
@@ -1184,82 +1514,82 @@ split_plot_server <- function(input, output, session) {
   # TABLE OUTPUTS
   ##########################################################
 
-  output$full_anova_table <- renderTable({
+  output$full_anova_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$full_anova)
   }, rownames = FALSE)
 
-  output$additive_anova_table <- renderTable({
+  output$additive_anova_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$additive_anova)
   }, rownames = FALSE)
 
-  output$assumptions_table <- renderTable({
+  output$assumptions_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$assumptions)
   }, rownames = FALSE)
 
-  output$split_anova_table <- renderTable({
+  output$split_anova_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$split_anova)
   }, rownames = FALSE)
 
-  output$split_main_means_table <- renderTable({
+  output$split_main_means_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$split_main_means)
   }, rownames = FALSE)
 
-  output$split_sub_means_table <- renderTable({
+  output$split_sub_means_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$split_sub_means)
   }, rownames = FALSE)
 
-  output$split_interaction_means_table <- renderTable({
+  output$split_interaction_means_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$split_interaction_means)
   }, rownames = FALSE)
 
-  output$split_lsd_cv_table <- renderTable({
+  output$split_lsd_cv_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$split_lsd_cv)
   }, rownames = FALSE)
 
-  output$emmeans_main_table <- renderTable({
+  output$emmeans_main_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$emmeans_main)
   }, rownames = FALSE)
 
-  output$emmeans_sub_table <- renderTable({
+  output$emmeans_sub_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$emmeans_sub)
   }, rownames = FALSE)
 
-  output$emmeans_interaction_table <- renderTable({
+  output$emmeans_interaction_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$emmeans_interaction)
   }, rownames = FALSE)
 
-  output$tukey_main_table <- renderTable({
+  output$tukey_main_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$tukey_main)
   }, rownames = FALSE)
 
-  output$tukey_sub_table <- renderTable({
+  output$tukey_sub_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$tukey_sub)
   }, rownames = FALSE)
 
-  output$cld_main_table <- renderTable({
+  output$cld_main_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$cld_main)
   }, rownames = FALSE)
 
-  output$cld_sub_table <- renderTable({
+  output$cld_sub_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$cld_sub)
   }, rownames = FALSE)
 
-  output$diagnostics_table <- renderTable({
+  output$diagnostics_table <- render_publication_table({
     req(analysis())
     safe_table(analysis()$diagnostics)
   }, rownames = FALSE)
@@ -1272,13 +1602,16 @@ split_plot_server <- function(input, output, session) {
 
     req(analysis())
 
-    analysis()$dataset
+    DT::datatable(
+      publication_table(analysis()$dataset),
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE
+      ),
+      rownames = FALSE
+    )
 
-  },
-  options = list(
-    pageLength = 10,
-    scrollX = TRUE
-  ))
+  })
 
   ##########################################################
   # SAFE PLOT FUNCTION
@@ -1639,7 +1972,7 @@ correlation_regression_ui <- function(nav_catalog = app_catalog) {
       checkboxInput("corr_sig_filter", "Hide insignificant correlations", value = TRUE),
       numericInput("corr_sig_level", "Significance level for plot", value = 0.05, min = 0.001, max = 0.2, step = 0.01),
       build_help_box("Expected data", c("Use numeric columns for correlation and regression.", "Choose one numeric response variable.", "Choose one or more numeric predictors.")),
-      actionButton("analyze", "Run correlation and regression", class = "btn-primary"),
+      tableOutput("corr_issues"), checkboxInput("corr_exclude", "Exclude the listed invalid observations", FALSE), actionButton("analyze", "Run correlation and regression", class = "btn-primary"),
       tags$hr(),
       selectInput("csv_table", "CSV table to download", choices = c("Correlation matrix", "Coefficients", "Fit statistics", "Diagnostics")),
       downloadButton("download_csv", "Download CSV"),
@@ -1649,12 +1982,18 @@ correlation_regression_ui <- function(nav_catalog = app_catalog) {
       uiOutput("error_msg")
     ),
     analysis_tabs(
-      tabPanel("Correlation Plot", plotOutput("correlation_plot", height = "520px")),
-      tabPanel("Correlation Matrix", tableOutput("correlation_table")),
-      tabPanel("Regression Coefficients", tableOutput("coefficients_table")),
-      tabPanel("Fit Statistics", tableOutput("fit_table")),
-      tabPanel("Diagnostics", tableOutput("diagnostics_table")),
-      tabPanel("Long Data View", tableOutput("long_data_table"))
+      tabPanel("Correlation Analysis",
+        output_section("Correlation Matrix", tableOutput("correlation_table")),
+        output_section("Correlation Plot", plotOutput("correlation_plot", height = "520px"))
+      ),
+      tabPanel("Regression Model",
+        output_section("Regression Coefficients", tableOutput("coefficients_table")),
+        output_section("Model Fit Statistics", tableOutput("fit_table"))
+      ),
+      tabPanel("Diagnostics & Data",
+        output_section("Observation Diagnostics", tableOutput("diagnostics_table")),
+        output_section("Long Data View", tableOutput("long_data_table"))
+      )
     )
     ,
     nav_catalog = nav_catalog
@@ -1665,6 +2004,13 @@ correlation_regression_server <- function(input, output, session) {
   err <- reactiveVal(NULL)
   dataset <- reactive(tryCatch(read_dataset_input(input$upload, input$data_input), error = function(e) NULL))
 
+  output$corr_issues <- render_publication_table({
+    req(dataset(), input$response, input$predictors)
+    observation_issues(dataset(), unique(c(input$response, input$predictors)))
+  })
+  observeEvent(list(dataset(), input$response, input$predictors), {
+    updateCheckboxInput(session, "corr_exclude", value = FALSE)
+  }, ignoreInit = TRUE)
   output$response_ui <- renderUI({
     df <- dataset()
     numeric_cols <- if (is.null(df)) character(0) else names(df)[vapply(df, is.numeric, logical(1))]
@@ -1678,9 +2024,9 @@ correlation_regression_server <- function(input, output, session) {
     checkboxGroupInput("predictors", "Predictor variables", choices = numeric_cols, selected = default_predictors)
   })
 
-  analysis <- eventReactive(input$analyze, {
+  analysis <- guarded_event_reactive(input$analyze, {
     err(NULL)
-    tryCatch(run_correlation_regression(read_dataset_input(input$upload, input$data_input), input$response, input$predictors), error = function(e) {
+    tryCatch(run_correlation_regression(read_dataset_input(input$upload, input$data_input), input$response, input$predictors, exclude_missing = isTRUE(input$corr_exclude)), error = function(e) {
       err(conditionMessage(e))
       NULL
     })
@@ -1718,11 +2064,11 @@ correlation_regression_server <- function(input, output, session) {
       title = sprintf("Correlation Plot: %s", analysis()$formula)
     )
   })
-  output$correlation_table <- renderTable({ req(analysis()); analysis()$correlation }, rownames = TRUE)
-  output$coefficients_table <- renderTable({ req(analysis()); analysis()$coefficients }, rownames = FALSE)
-  output$fit_table <- renderTable({ req(analysis()); analysis()$fit }, rownames = FALSE)
-  output$diagnostics_table <- renderTable({ req(analysis()); analysis()$diagnostics }, rownames = FALSE)
-  output$long_data_table <- renderTable({ req(analysis()); analysis()$dataset }, rownames = FALSE)
+  output$correlation_table <- render_publication_table({ req(analysis()); analysis()$correlation }, rownames = FALSE)
+  output$coefficients_table <- render_publication_table({ req(analysis()); analysis()$coefficients }, rownames = FALSE)
+  output$fit_table <- render_publication_table({ req(analysis()); analysis()$fit }, rownames = FALSE)
+  output$diagnostics_table <- render_publication_table({ req(analysis()); analysis()$diagnostics }, rownames = FALSE)
+  output$long_data_table <- render_publication_table({ req(analysis()); analysis()$dataset }, rownames = FALSE)
 
   output$download_csv <- downloadHandler(
     filename = function() sprintf("correlation-regression-%s.csv", gsub("[^a-z]+", "-", tolower(input$csv_table))),
@@ -1790,7 +2136,7 @@ correlation_regression_server <- function(input, output, session) {
         "Correlation P-values" = result$correlation_p,
         "Regression Coefficients" = result$coefficients,
         "Fit Statistics" = result$fit,
-        "Diagnostics" = result$diagnostics
+        "Exclusions" = result$exclusions, "Diagnostics" = result$diagnostics
       ),
       generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
     )
@@ -1865,7 +2211,7 @@ met_stability_ui <- function(nav_catalog = app_catalog) {
         "Trait: one numeric response column for single mode, or multiple numeric traits for batch mode."
       )),
 
-      actionButton("met_run", "Run MET Analysis", class = "btn-primary"),
+      tableOutput("met_review_issues"), checkboxInput("met_exclude", "Exclude the listed invalid observations", FALSE), actionButton("met_run", "Run MET Analysis", class = "btn-primary"),
       tags$hr(),
       selectInput("met_csv_table", "CSV table to download",
                   choices = c("Genotype Means", "Combined ANOVA", "Over-Year ANOVA",
@@ -1882,91 +2228,77 @@ met_stability_ui <- function(nav_catalog = app_catalog) {
     tagList(
       div(class = "station-panel", uiOutput("met_cached_result_header")),
       analysis_tabs(
-        tabPanel("Data Preview",
-          DT::dataTableOutput("met_data_table")
-        ),
-        tabPanel("Individual ANOVA",
-          uiOutput("met_env_selector_ui"),
-          tags$hr(),
-          tableOutput("met_ind_anova_table"),
-          uiOutput("met_ind_anova_summary")
-        ),
-        tabPanel("Combined ANOVA",
-          tableOutput("met_comb_anova_table"),
-          uiOutput("met_comb_anova_summary")
-        ),
-        tabPanel("Over-Year ANOVA",
-          uiOutput("met_year_anova_msg"),
-          tableOutput("met_year_anova_table")
-        ),
-        tabPanel("Genotype Means",
-          tableOutput("met_gen_means_table"),
-          tags$br(),
-          plotOutput("met_gen_means_plot", height = "400px")
-        ),
-        tabPanel("AMMI",
-          tabsetPanel(
-            tabPanel("AMMI ANOVA", tableOutput("met_ammi_anova_table")),
-            tabPanel("IPCA Summary", tableOutput("met_ammi_ipca_table")),
-            tabPanel("PC Scores", tableOutput("met_ammi_scores_table")),
-            tabPanel("Stability Indices",
-              p(class = "station-muted",
-                "ASV: AMMI Stability Value | SIPC: Sum of absolute IPCAs | EV: Eigenvalue stability | ZA: Z-score average | WAAS: Weighted average absolute scores"),
-              tableOutput("met_ammi_stab_table")
-            )
-          )
-        ),
-        tabPanel("AMMI Biplots",
-          tabsetPanel(
-            tabPanel("AMMI1 - Mean vs PC1", plotOutput("met_ammi1_plot", height = "520px")),
-            tabPanel("AMMI2 - PC1 vs PC2",  plotOutput("met_ammi2_plot", height = "520px"))
+        tabPanel("ANOVA & Means",
+          output_section("Genotype Means Across Environments",
+            tableOutput("met_gen_means_table"),
+            plotOutput("met_gen_means_plot", height = "400px")
           ),
-        ),
-        tabPanel("GGE Biplots",
-          tabsetPanel(
-            tabPanel("Mean vs Stability",  plotOutput("met_gge_mean_stab_plot", height = "520px")),
-            tabPanel("Which-Won-Where",    plotOutput("met_gge_www_plot",       height = "520px")),
-            tabPanel("Discriminativeness", plotOutput("met_gge_disc_plot",      height = "520px")),
-            tabPanel("Env. Relationship",  plotOutput("met_gge_env_plot",       height = "520px"))
-          )
-        ),
-        tabPanel("WAASB / WAASBY",
-          tableOutput("met_waasb_table"),
-          tags$br(),
-          plotOutput("met_waasby_plot", height = "420px")
-        ),
-        tabPanel("BLUPs",
-          p(class = "station-muted",
-            "HMGV: Harmonic Mean of Genotypic Values | RPGV: Relative Performance of Genotypic Values | HMRPGV: Harmonic Mean of RPGV (combined stability + yield index)"),
-          tableOutput("met_blup_table"),
-          tags$br(),
-          plotOutput("met_blup_plot", height = "400px")
-        ),
-        tabPanel("SSI",
-          tabsetPanel(
-            tabPanel("Parametric SSI (P-SSI)",
-              p(class = "station-muted",
-                "Weighted index: 70% yield + 30% stability. Higher P-SSI = better."),
-              tableOutput("met_pssi_table")
-            ),
-            tabPanel("Non-Parametric SSI (NP-SSI)",
-              p(class = "station-muted",
-                "Rank-sum of yield rank + stability rank. Lower NP-SSI = better."),
-              tableOutput("met_npssi_table")
-            ),
-            tabPanel("Culled SSI (C-SSI)",
-              p(class = "station-muted",
-                "Stable genotypes (WAASB < mean) ranked by yield after culling unstable entries."),
-              tableOutput("met_cssi_table")
-            )
-          )
-        ),
-        tabPanel("Batch Summary",
-          tabsetPanel(
-            tabPanel("Top 10 by Trait", tableOutput("met_batch_top_table")),
-            tabPanel("Multi-Trait Index", tableOutput("met_batch_index_table")),
-            tabPanel("Trait Errors", tableOutput("met_batch_errors_table"))
+          output_section("Combined Multi-Environment ANOVA",
+            tableOutput("met_comb_anova_table"),
+            uiOutput("met_comb_anova_summary")
           ),
+          output_section("Individual Environment ANOVA",
+            uiOutput("met_env_selector_ui"),
+            tableOutput("met_ind_anova_table"),
+            uiOutput("met_ind_anova_summary")
+          ),
+          output_section("Over-Year / Season x Location ANOVA",
+            uiOutput("met_year_anova_msg"),
+            tableOutput("met_year_anova_table")
+          )
+        ),
+        tabPanel("AMMI & GGE",
+          output_section("AMMI ANOVA & IPCA Summary",
+            tableOutput("met_ammi_anova_table"), tags$br(),
+            tableOutput("met_ammi_ipca_table")
+          ),
+          output_section("AMMI PC Scores & Stability Indices",
+            tableOutput("met_ammi_scores_table"), tags$br(),
+            tableOutput("met_ammi_stab_table"),
+            subtitle = "ASV: AMMI Stability Value | SIPC: Sum of absolute IPCAs | EV: Eigenvalue stability | ZA: Z-score average | WAAS: Weighted average absolute scores"
+          ),
+          output_section("AMMI Biplots (AMMI1 & AMMI2)",
+            plotOutput("met_ammi1_plot", height = "480px"),
+            plotOutput("met_ammi2_plot", height = "480px")
+          ),
+          output_section("GGE Biplots (Mean vs Stability, Which-Won-Where, Discriminativeness, Env. Relationship)",
+            plotOutput("met_gge_mean_stab_plot", height = "480px"),
+            plotOutput("met_gge_www_plot",       height = "480px"),
+            plotOutput("met_gge_disc_plot",      height = "480px"),
+            plotOutput("met_gge_env_plot",       height = "480px")
+          )
+        ),
+        tabPanel("BLUP & Stability Indices",
+          output_section("WAASB / WAASBY Stability Scores",
+            tableOutput("met_waasb_table"),
+            plotOutput("met_waasby_plot", height = "420px")
+          ),
+          output_section("BLUP-Based Stability Indices (HMGV, RPGV, HMRPGV)",
+            tableOutput("met_blup_table"),
+            plotOutput("met_blup_plot", height = "400px"),
+            subtitle = "HMGV: Harmonic Mean of Genotypic Values | RPGV: Relative Performance of Genotypic Values | HMRPGV: Harmonic Mean of RPGV (combined stability + yield index)"
+          ),
+          output_section("Simultaneous Selection Indices (P-SSI, NP-SSI, Culled SSI)",
+            tags$h4("Parametric SSI (70% yield + 30% stability)"),
+            tableOutput("met_pssi_table"), tags$br(),
+            tags$h4("Non-Parametric SSI (Rank sum of yield rank + stability rank)"),
+            tableOutput("met_npssi_table"), tags$br(),
+            tags$h4("Culled SSI (Stable genotypes WAASB < mean ranked by yield)"),
+            tableOutput("met_cssi_table")
+          )
+        ),
+        tabPanel("Batch & Data",
+          output_section("Multi-Trait Batch Summary",
+            tags$h4("Top 10 by Trait"),
+            tableOutput("met_batch_top_table"), tags$br(),
+            tags$h4("Multi-Trait Index"),
+            tableOutput("met_batch_index_table"), tags$br(),
+            tags$h4("Trait Errors"),
+            tableOutput("met_batch_errors_table")
+          ),
+          output_section("Data Preview",
+            DT::dataTableOutput("met_data_table")
+          )
         )
       )
     ),
@@ -1988,6 +2320,16 @@ met_stability_server <- function(input, output, session) {
     )
   })
 
+  output$met_review_issues <- render_publication_table({
+    req(dataset(), input$met_gen_col, input$met_rep_col)
+    traits <- if (identical(input$met_mode, "batch")) input$met_trait_cols else input$met_trait_col
+    req(length(traits) > 0)
+    ids <- c(input$met_gen_col, input$met_rep_col, if (isTRUE(input$met_use_sep_env)) c(input$met_season_col, input$met_loc_col) else input$met_env_col)
+    observation_issues(dataset(), traits, ids)
+  })
+  observeEvent(list(dataset(), input$met_trait_col, input$met_trait_cols, input$met_gen_col, input$met_rep_col, input$met_env_col, input$met_use_sep_env, input$met_season_col, input$met_loc_col), {
+    updateCheckboxInput(session, "met_exclude", value = FALSE)
+  }, ignoreInit = TRUE)
   all_cols     <- reactive({ df <- dataset(); if (is.null(df)) character(0) else names(df) })
   numeric_cols <- reactive({
     df <- dataset()
@@ -2095,7 +2437,7 @@ met_stability_server <- function(input, output, session) {
     selectInput("met_loc_col", "Location column", choices = cols, selected = sel)
   })
 
-  analysis <- eventReactive(input$met_run, {
+  analysis <- guarded_event_reactive(input$met_run, {
     err(NULL)
     tryCatch({
       df             <- read_dataset_input(input$met_upload, input$met_data_input)
@@ -2125,7 +2467,7 @@ met_stability_server <- function(input, output, session) {
           direction_map = direction_map,
           season_col    = season_col_use,
           loc_col       = loc_col_use,
-          alpha         = input$met_alpha
+          alpha         = input$met_alpha, exclude_missing = isTRUE(input$met_exclude)
         )
         if (length(batch$results) == 0) {
           stop("Batch analysis failed for all selected traits.")
@@ -2158,7 +2500,7 @@ met_stability_server <- function(input, output, session) {
           season_col = season_col_use,
           loc_col    = loc_col_use,
           alpha      = input$met_alpha,
-          direction  = direction
+          direction  = direction, exclude_missing = isTRUE(input$met_exclude)
         )
         list(
           mode = "single",
@@ -2269,15 +2611,16 @@ met_stability_server <- function(input, output, session) {
   })
 
   output$met_data_table <- DT::renderDataTable({
-    req(current_result()); current_result()$dataset
-  }, options = list(pageLength = 10, scrollX = TRUE))
+    req(current_result())
+    DT::datatable(publication_table(current_result()$dataset), options = list(pageLength = 10, scrollX = TRUE), rownames = FALSE)
+  })
 
   output$met_env_selector_ui <- renderUI({
     req(current_result())
     envs <- names(current_result()$ind_anova)
     selectInput("met_sel_env", "Select environment to view", choices = envs, selected = envs[1])
   })
-  output$met_ind_anova_table <- renderTable({
+  output$met_ind_anova_table <- render_publication_table({
     req(current_result(), input$met_sel_env); current_result()$ind_anova[[input$met_sel_env]]
   }, rownames = FALSE)
   output$met_ind_anova_summary <- renderUI({
@@ -2285,15 +2628,15 @@ met_stability_server <- function(input, output, session) {
     tbl <- current_result()$ind_anova[[input$met_sel_env]]
     cv  <- attr(tbl, "cv_pct"); gm <- attr(tbl, "grand_mean")
     if (!is.null(cv) && !is.null(gm))
-      div(class = "station-muted", sprintf("Grand Mean: %.4f  |  CV: %.2f%%", gm, cv))
+      div(class = "station-muted", sprintf("Grand Mean: %.3f  |  CV: %.3f%%", gm, cv))
   })
 
-  output$met_comb_anova_table <- renderTable({ req(current_result()); current_result()$comb_anova }, rownames = FALSE)
+  output$met_comb_anova_table <- render_publication_table({ req(current_result()); current_result()$comb_anova }, rownames = FALSE)
   output$met_comb_anova_summary <- renderUI({
     req(current_result())
     tbl <- current_result()$comb_anova; cv <- attr(tbl, "cv_pct"); gm <- attr(tbl, "grand_mean")
     if (!is.null(cv) && !is.null(gm))
-      div(class = "station-muted", sprintf("Grand Mean: %.4f  |  CV: %.2f%%", gm, cv))
+      div(class = "station-muted", sprintf("Grand Mean: %.3f  |  CV: %.3f%%", gm, cv))
   })
 
   output$met_year_anova_msg <- renderUI({
@@ -2303,9 +2646,9 @@ met_stability_server <- function(input, output, session) {
           "Over-Year ANOVA is available only when Season and Location columns are specified.",
           "Enable 'Build ENV from separate Season x Location columns' in the sidebar.")
   })
-  output$met_year_anova_table <- renderTable({ req(current_result()); current_result()$year_anova }, rownames = FALSE)
+  output$met_year_anova_table <- render_publication_table({ req(current_result()); current_result()$year_anova }, rownames = FALSE)
 
-  output$met_gen_means_table <- renderTable({ req(current_result()); current_result()$gen_means }, rownames = FALSE)
+  output$met_gen_means_table <- render_publication_table({ req(current_result()); current_result()$gen_means }, rownames = FALSE)
   output$met_gen_means_plot  <- renderPlot({
     req(current_result())
     gm <- current_result()$gen_means
@@ -2320,10 +2663,10 @@ met_stability_server <- function(input, output, session) {
       ggplot2::labs(title = paste("Genotype means +/-SD for", current_result()$trait), x = "Genotype", y = "Mean")
   })
 
-  output$met_ammi_anova_table  <- renderTable({ req(current_result()); current_result()$ammi$anova }, rownames = FALSE)
-  output$met_ammi_ipca_table   <- renderTable({ req(current_result()); current_result()$ammi$ipca_summary }, rownames = FALSE)
-  output$met_ammi_scores_table <- renderTable({ req(current_result()); current_result()$ammi$pc_scores }, rownames = FALSE)
-  output$met_ammi_stab_table   <- renderTable({ req(current_result()); current_result()$ammi$stability }, rownames = FALSE)
+  output$met_ammi_anova_table  <- render_publication_table({ req(current_result()); current_result()$ammi$anova }, rownames = FALSE)
+  output$met_ammi_ipca_table   <- render_publication_table({ req(current_result()); current_result()$ammi$ipca_summary }, rownames = FALSE)
+  output$met_ammi_scores_table <- render_publication_table({ req(current_result()); current_result()$ammi$pc_scores }, rownames = FALSE)
+  output$met_ammi_stab_table   <- render_publication_table({ req(current_result()); current_result()$ammi$stability }, rownames = FALSE)
 
   output$met_ammi1_plot <- renderPlot({
     req(current_result()); mod <- current_result()$ammi$mod
@@ -2348,7 +2691,7 @@ met_stability_server <- function(input, output, session) {
   output$met_gge_disc_plot      <- make_gge_plot(4)
   output$met_gge_env_plot       <- make_gge_plot(6)
 
-  output$met_waasb_table <- renderTable({ req(current_result()); current_result()$waasb$scores }, rownames = FALSE)
+  output$met_waasb_table <- render_publication_table({ req(current_result()); current_result()$waasb$scores }, rownames = FALSE)
   output$met_waasby_plot <- renderPlot({
     req(current_result()); mod <- current_result()$waasb$mod
     validate(need(!is.null(mod), "WAASB model not available. Check data and re-run."))
@@ -2356,7 +2699,7 @@ met_stability_server <- function(input, output, session) {
     if (is.function(plot_fun)) plot_fun(mod) else metan::plot_scores(mod, type = 3)
   })
 
-  output$met_blup_table <- renderTable({ req(current_result()); current_result()$blup }, rownames = FALSE)
+  output$met_blup_table <- render_publication_table({ req(current_result()); current_result()$blup }, rownames = FALSE)
   output$met_blup_plot  <- renderPlot({
     req(current_result()); blup <- current_result()$blup
     validate(need(!is.null(blup) && "HMRPGV" %in% names(blup), "BLUP indices not available."))
@@ -2371,30 +2714,30 @@ met_stability_server <- function(input, output, session) {
       ggplot2::labs(title = "HMRPGV - Stability-adjusted BLUP ranking", x = "Genotype", y = "HMRPGV")
   })
 
-  output$met_pssi_table <- renderTable({
+  output$met_pssi_table <- render_publication_table({
     req(current_result()); ssi <- current_result()$ssi$full; if (is.null(ssi)) return(NULL)
     cols <- intersect(c("GEN","Mean","WAASB","WAASBY","P_SSI","Rank_P_SSI"), names(ssi))
     ssi[, cols, drop = FALSE]
   }, rownames = FALSE)
-  output$met_npssi_table <- renderTable({
+  output$met_npssi_table <- render_publication_table({
     req(current_result()); ssi <- current_result()$ssi$full; if (is.null(ssi)) return(NULL)
     ssi  <- ssi[order(ssi$Rank_NP_SSI), ]
     cols <- intersect(c("GEN","Mean","WAASB","Rank_Yield","Rank_Stability","NP_SSI","Rank_NP_SSI"), names(ssi))
     ssi[, cols, drop = FALSE]
   }, rownames = FALSE)
-  output$met_cssi_table <- renderTable({ req(current_result()); current_result()$ssi$culled }, rownames = FALSE)
+  output$met_cssi_table <- render_publication_table({ req(current_result()); current_result()$ssi$culled }, rownames = FALSE)
 
-  output$met_batch_top_table <- renderTable({
+  output$met_batch_top_table <- render_publication_table({
     batch <- batch_result()
     if (is.null(batch)) return(data.frame(Message = "Run multi-trait batch mode to see this summary."))
     batch$top_summary
   }, rownames = FALSE)
-  output$met_batch_index_table <- renderTable({
+  output$met_batch_index_table <- render_publication_table({
     batch <- batch_result()
     if (is.null(batch)) return(data.frame(Message = "Run multi-trait batch mode to see this summary."))
     batch$multi_trait_index
   }, rownames = FALSE)
-  output$met_batch_errors_table <- renderTable({
+  output$met_batch_errors_table <- render_publication_table({
     batch <- batch_result()
     if (is.null(batch)) return(data.frame(Message = "Run multi-trait batch mode to see trait errors."))
     if (nrow(batch$errors) == 0) return(data.frame(Message = "No trait-level errors."))

@@ -1,0 +1,2 @@
+"Contrast","Estimate","SE","df","t","P","LowerCI","UpperCI","Method"
+"Control minus Treatment",-2.76666666666667,0.555777733351103,4,-4.97800919440376,0.00760808196952277,-4.30975303400726,-1.22358029932608," Two Sample t-test"

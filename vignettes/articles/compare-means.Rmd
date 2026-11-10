@@ -1,0 +1,112 @@
+---
+title: "Compare Means"
+output:
+  html_document:
+    toc: true
+---
+
+Report the difference with its uncertainty
+
+## Question and data
+Choose a one-sample, equal-variance two-sample, Welch or paired t-test. Paired data must have the two measurements aligned within each experimental unit.
+
+## Reporting and assumptions
+The result contains the explicitly named contrast, difference estimate, SE, df, t, p-value and 95% confidence interval for that same difference. The independent contrast subtracts the second factor level from the first; paired contrasts subtract right from left.
+
+One-sample results express the mean minus the hypothesized value. Welch allows unequal variances; pairing must follow the design rather than data ordering alone. All tests here are two-sided. A variance test is diagnostic, not an automatic rule for choosing a t-test.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## ttest-one-sample
+
+Synthetic teaching data.
+
+```{r ttest-one-sample, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Compare Means"]])
+result <- run_ttest_analysis(data,"one-sample",value_var="Value",group_var="Group",mu=25)
+```
+
+```{r ttest-one-sample-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r ttest-one-sample-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## ttest-two-sample
+
+Synthetic teaching data.
+
+```{r ttest-two-sample, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Compare Means"]])
+result <- run_ttest_analysis(data,"two-sample",value_var="Value",group_var="Group",mu=25)
+```
+
+```{r ttest-two-sample-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r ttest-two-sample-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## ttest-welch
+
+Synthetic teaching data.
+
+```{r ttest-welch, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["Compare Means"]])
+result <- run_ttest_analysis(data,"welch",value_var="Value",group_var="Group",mu=25)
+```
+
+```{r ttest-welch-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r ttest-welch-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## ttest-paired
+
+Synthetic teaching data.
+
+```{r ttest-paired, message=FALSE, warning=TRUE}
+data <- data.frame(Before=c(10.1,11.3,9.8,12.2),After=c(11,12,10.4,12.8))
+result <- run_ttest_analysis(data,"paired",value_var="Before",pair_left="Before",pair_right="After")
+```
+
+```{r ttest-paired-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r ttest-paired-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

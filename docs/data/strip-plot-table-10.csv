@@ -1,0 +1,4 @@
+"Term","Setting","Value"
+"Alpha","Alpha","0.05"
+"Errors","Errors","Rep:A, Rep:B, residual interaction"
+"Comparisons","Comparisons","Tukey within each displayed family"

@@ -1,0 +1,70 @@
+---
+title: "Spatial Field Analysis"
+output:
+  html_document:
+    toc: true
+---
+
+Model spatial variation using observed field coordinates
+
+## Question and data
+Map genotype, replication, numeric row, numeric column and response. Coordinates must identify unique plots, with at least four distinct rows and columns.
+
+## Reporting and assumptions
+SpATS fits a PSANOVA surface with fixed replication and fixed or random genotype. Report the specification and genotype estimates with their model-provided SEs. Inspect the field map, fitted surface and residual map together.
+
+Residual RMSE is in-sample fit, not proof of predictive improvement. A model reaching its iteration limit is not a validated fit. Coordinate scales and field geometry are part of the scientific model.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## spatial-random
+
+Synthetic teaching data.
+
+```{r spatial-random, message=FALSE, warning=TRUE}
+data <- research_example("spatial-field")
+result <- run_spatial_trial(data,genotype_random=TRUE)
+```
+
+```{r spatial-random-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r spatial-random-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## spatial-fixed
+
+Synthetic teaching data.
+
+```{r spatial-fixed, message=FALSE, warning=TRUE}
+data <- research_example("spatial-field")
+result <- run_spatial_trial(data,genotype_random=FALSE)
+```
+
+```{r spatial-fixed-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r spatial-fixed-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

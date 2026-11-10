@@ -1,0 +1,4 @@
+"grp","var1","var2","vcov","sdcor"
+"Year:Rep:MainPlot","(Intercept)",NA,1.87146042548404,1.36801331334313
+"Year:Rep","(Intercept)",NA,0,0
+"Residual",NA,NA,0.49020292125332,0.70014492874927

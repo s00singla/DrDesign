@@ -1,0 +1,7 @@
+"Term","Component","Variance"
+"Genotype","Genotype",8.47986759049364
+"f(Column)","f(Column)",1.04013045924484e-38
+"f(Row)","f(Row)",0.00609110683696551
+"f(Column):Row","f(Column):Row",2.20418636128055e-15
+"Column:f(Row)","Column:f(Row)",8.74885956262302
+"f(Column):f(Row)","f(Column):f(Row)",2.22408713924618e-12

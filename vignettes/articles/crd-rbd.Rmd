@@ -1,0 +1,154 @@
+---
+title: "CRD / RBD"
+output:
+  html_document:
+    toc: true
+---
+
+Compare treatments using the experimental error
+
+## Question and data
+Enter one row per treatment and one column per replication. Use CRD for unrestricted randomization or RBD for complete blocks. Treatment identifiers must be unique.
+
+## Reporting and assumptions
+Report the design, treatment and error df, SS, MS, F and p-value. Treatment means have model-based SE and t confidence limits. State LSD, Duncan or Tukey explicitly; LSD and Duncan do not provide the same familywise protection as Tukey.
+
+Shared letters indicate that the comparison did not reject a difference; they do not prove equivalence. An insignificant omnibus test does not establish equality. No automatic model-based outlier deletion occurs.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## CRD-LSD
+
+Synthetic teaching data.
+
+```{r CRD-LSD, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["CRD"]])
+result <- run_design_analysis(data, "CRD", comparison_method="LSD")
+```
+
+```{r CRD-LSD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r CRD-LSD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## CRD-DMRT
+
+Synthetic teaching data.
+
+```{r CRD-DMRT, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["CRD"]])
+result <- run_design_analysis(data, "CRD", comparison_method="DMRT")
+```
+
+```{r CRD-DMRT-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r CRD-DMRT-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## CRD-Tukey
+
+Synthetic teaching data.
+
+```{r CRD-Tukey, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["CRD"]])
+result <- run_design_analysis(data, "CRD", comparison_method="Tukey")
+```
+
+```{r CRD-Tukey-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r CRD-Tukey-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## RBD-LSD
+
+Synthetic teaching data.
+
+```{r RBD-LSD, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["RBD"]])
+result <- run_design_analysis(data, "RBD", comparison_method="LSD")
+```
+
+```{r RBD-LSD-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r RBD-LSD-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## RBD-DMRT
+
+Synthetic teaching data.
+
+```{r RBD-DMRT, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["RBD"]])
+result <- run_design_analysis(data, "RBD", comparison_method="DMRT")
+```
+
+```{r RBD-DMRT-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r RBD-DMRT-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## RBD-Tukey
+
+Synthetic teaching data.
+
+```{r RBD-Tukey, message=FALSE, warning=TRUE}
+data <- read_pasted_table(default_data[["RBD"]])
+result <- run_design_analysis(data, "RBD", comparison_method="Tukey")
+```
+
+```{r RBD-Tukey-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r RBD-Tukey-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

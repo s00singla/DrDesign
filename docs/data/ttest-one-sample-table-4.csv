@@ -1,0 +1,2 @@
+"Contrast","Estimate","SE","df","t","P","LowerCI","UpperCI","Method"
+"Value minus 25",1.85,0.666708332031332,5,2.77482657875807,0.0391409779859144,0.136171672012875,3.56382832798712,"One Sample t-test"

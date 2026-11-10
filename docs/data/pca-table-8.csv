@@ -1,0 +1,5 @@
+"Term","Setting","Value"
+"Scaling","Scaling","Centre and unit standard deviation"
+"Distance","Distance","Euclidean"
+"Linkage","Linkage","Ward.D2"
+"Clusters","Clusters","3"

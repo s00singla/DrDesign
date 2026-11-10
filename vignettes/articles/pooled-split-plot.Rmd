@@ -1,0 +1,50 @@
+---
+title: "Pooled Split Plot"
+output:
+  html_document:
+    toc: true
+---
+
+Combine split-plot trials across years
+
+## Question and data
+Supply Year, Rep, MainPlot, SubPlot and Value. The same complete treatment structure and replicate count are required in every year.
+
+## Reporting and assumptions
+The mixed model contains fixed year and treatment interactions, with random Year:Rep and Year:Rep:MainPlot intercepts. Report Satterthwaite df, variance components, estimated means and the specified Fisher LSD contrasts.
+
+Fisher LSD contrast p-values are unadjusted. Marginal comparisons across years average interactions. The saturated treatment structure is retained; boundary fits and convergence warnings require scientific review.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## pooled-split-plot
+
+Synthetic teaching data.
+
+```{r pooled-split-plot, message=FALSE, warning=TRUE}
+data <- read_pasted_table(pooled_split_plot_example)
+data$Value <- data$Value+sin(seq_len(nrow(data))*1.7)
+result <- run_pooled_split_plot(data,include_pwpp=TRUE)
+```
+
+```{r pooled-split-plot-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r pooled-split-plot-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

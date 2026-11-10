@@ -1,0 +1,93 @@
+---
+title: "MET Stability"
+output:
+  html_document:
+    toc: true
+---
+
+Separate mean performance, interaction and stability
+
+## Question and data
+Map genotype, environment, replication and a numeric trait. Supply all genotype-environment means for AMMI/GGE; missing cells are never silently imputed. Choose whether high or low values are desirable.
+
+## Reporting and assumptions
+The examples include AMMI, GGE plots, WAASB/WAASBY, BLUP-based harmonic indices, rank-sum summaries and a two-trait batch. WAASBY uses 70% performance and 30% stability. Report centring/scaling and trait direction with biplots.
+
+Harmonic indices need positive predictions in every environment. Batch top-ten summaries are descriptive rank summaries, not MGIDI or a formal genetic selection index. An unavailable method remains unavailable with a diagnostic; substitute formulas are not silently used.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## met-h
+
+Synthetic teaching data.
+
+```{r met-h, message=FALSE, warning=TRUE}
+data <- read_pasted_table(met_example)
+result <- run_met_analysis(data,"GEN","ENV","REP","Yield",direction="h")
+```
+
+```{r met-h-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r met-h-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## met-l
+
+Synthetic teaching data.
+
+```{r met-l, message=FALSE, warning=TRUE}
+data <- read_pasted_table(met_example)
+result <- run_met_analysis(data,"GEN","ENV","REP","Yield",direction="l")
+```
+
+```{r met-l-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r met-l-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```
+
+## met-batch
+
+Synthetic teaching data.
+
+```{r met-batch, message=FALSE, warning=TRUE}
+data <- read_pasted_table(met_example)
+data$Height <- 50+2*data$Yield+cos(seq_len(nrow(data)))
+batch <- run_met_batch_analysis(data,"GEN","ENV","REP",c("Yield","Height"),c(Yield="h",Height="l"))
+result <- list(tables=met_all_batch_result_tables(batch,batch$results[[1]]))
+```
+
+```{r met-batch-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r met-batch-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

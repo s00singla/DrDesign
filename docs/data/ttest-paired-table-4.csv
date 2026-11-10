@@ -1,0 +1,2 @@
+"Contrast","Estimate","SE","df","t","P","LowerCI","UpperCI","Method"
+"Before minus After",-0.7,0.0707106781186547,3,-9.89949493661167,0.00219231889865774,-0.925032936322818,-0.474967063677182,"Paired t-test"

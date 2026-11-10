@@ -1,0 +1,49 @@
+---
+title: "Generation-Mean Analysis"
+output:
+  html_document:
+    toc: true
+---
+
+Fit generation means with a declared parameterization
+
+## Question and data
+Provide one mean and positive sampling SE for P1, P2, F1, F2, BC1 and BC2. The analysis assumes these six means are independent.
+
+## Reporting and assumptions
+The fitted equation is m + a·d + b·h + a²·i + ab·j + b²·l. The exported coefficient matrix is authoritative: BC1/BC2 use ±1/4 for the j coefficient. Report three-parameter joint lack of fit and A–D scaling tests before interpreting the saturated six-parameter estimates.
+
+Some publications define the additive × dominance coefficient as 2ab; their j estimate is half the ab-convention estimate here. Do not compare coefficients across conventions without transformation. The full six-parameter fit has zero lack-of-fit df; supplied SEs are treated as known sampling uncertainty.
+
+```{r setup, include=FALSE}
+roots <- c(".","..","../..")
+root <- roots[file.exists(file.path(roots,"tools","example-cases.R"))][1]
+stopifnot(!is.na(root))
+knitr::opts_knit$set(root.dir=normalizePath(root))
+```
+
+```{r load, message=FALSE, warning=FALSE}
+source("tools/example-cases.R")
+load_drdesign()
+```
+
+## generation-means
+
+Synthetic teaching data.
+
+```{r generation-means, message=FALSE, warning=TRUE}
+data <- research_example("generation-means")
+result <- run_generation_means(data)
+```
+
+```{r generation-means-tables, echo=FALSE, results="asis"}
+tables <- example_tables(result)
+for (nm in names(tables)) {
+  cat("\n\n### ",nm,"\n\n",sep="")
+  report_kable(tables[[nm]])
+}
+```
+
+```{r generation-means-plots, echo=FALSE}
+for (p in example_plots(result)) { if (is.function(p)) p() else print(p) }
+```

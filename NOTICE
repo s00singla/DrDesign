@@ -1,0 +1,15 @@
+DrDesign 1.1.0 - Third-Party and Provenance Notice
+
+DrDesign uses R and CRAN/Bioconductor packages at runtime. These dependencies
+are not copied into the claimed DrDesign source-code submission. Their names,
+versions, licences, and dependency relationships are recorded in the generated
+dependency SBOM accompanying the release candidate.
+
+The repository historically contains a copy of grapesAgri1-1.1.0, copyright
+Kerala Agricultural University and its named authors, licensed under GPL-3.
+Saurav Singla has stated that DrDesign is an independent implementation. The
+grapesAgri1 tree is excluded from the DrDesign release candidate, source-code
+submission, object-code candidate, and ownership claim.
+
+No ownership is claimed over third-party software, package documentation,
+sample datasets, logos, screenshots, fonts, or system components.
